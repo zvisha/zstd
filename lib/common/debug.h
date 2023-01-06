@@ -59,8 +59,8 @@ void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 
 #define DBG_HEADERS_PARSING 1
 #define DBG_LITERALS       1
-#define DBG_FSE_BUILD_TABLE 0
-#define DBG_SEQUENCES_VERBOSE 0
+#define DBG_FSE_BUILD_TABLE 1
+#define DBG_SEQUENCES_VERBOSE 1
 
 #define DBG_HUFF 1
 #define DBG_ASN 1
