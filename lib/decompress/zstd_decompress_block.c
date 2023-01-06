@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright (c) Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -41,6 +41,26 @@
 #error "Cannot force the use of the short and the long ZSTD_decompressSequences variants!"
 #endif
 
+
+
+
+
+
+
+
+
+
+/*_*******************************************************
+*  Zvi's Prints
+**********************************************************/
+
+void DBG_ZSTD_seqSymbol(const char* name, int state,const ZSTD_seqSymbol* s) {
+    DBG(DBG_SEQUENCES_VERBOSE, "%s ZSTD_seqSymbol: current state:%3d, nextState:%3d, nbBits:%d, nbAdditionalBits:%2d, baseValue:%3d\n",name, state, s->nextState, s->nbBits, s->nbAdditionalBits, s->baseValue);
+}
+
+void DBG_BIT_DStream_t(const char* name, BIT_DStream_t *s) {
+    DBG(DBG_SEQUENCES_VERBOSE, "%s BIT_DStream_t: bitContainer:%zu, bitsConsumed:%d, ptr:%p, start:%p, limitPtr:%p\n",name, s->bitContainer, s->bitsConsumed, s->ptr, s->start, s->limitPtr);
+}
 
 /*_*******************************************************
 *  Memory operations
@@ -122,15 +142,17 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
                           void* dst, size_t dstCapacity, const streaming_operation streaming)
 {
     DEBUGLOG(5, "ZSTD_decodeLiteralsBlock");
+    DBG(DBG_LITERALS, "!!!!!!!!!!!! ZSTD_decodeLiteralsBlock !!!!!!!!!!!\n");
     RETURN_ERROR_IF(srcSize < MIN_CBLOCK_SIZE, corruption_detected, "");
 
     {   const BYTE* const istart = (const BYTE*) src;
+        DBG(DBG_LITERALS, "ZSTD_decodeLiteralsBlock: reading byte %02x\n", istart[0]);
         symbolEncodingType_e const litEncType = (symbolEncodingType_e)(istart[0] & 3);
-
+        DBG(DBG_LITERALS, "BLOCK LITERALS decode: type %d (basic=0, rle=1, compressed=2, repeat=3)\n", litEncType);
         switch(litEncType)
         {
         case set_repeat:
-            DEBUGLOG(5, "set_repeat flag : re-using stats from previous compressed literals block");
+            DBG(DBG_LITERALS, "BLOCK repeating last LITERALS\n");
             RETURN_ERROR_IF(dctx->litEntropy==0, dictionary_corrupted, "");
             ZSTD_FALLTHROUGH;
 
@@ -139,6 +161,7 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
             {   size_t lhSize, litSize, litCSize;
                 U32 singleStream=0;
                 U32 const lhlCode = (istart[0] >> 2) & 3;
+                DBG(DBG_LITERALS, "Literals compressed literals size of size = %d\n", lhlCode);
                 U32 const lhc = MEM_readLE32(istart);
                 size_t hufSuccess;
                 size_t expectedWriteSize = MIN(ZSTD_BLOCKSIZE_MAX, dstCapacity);
@@ -164,14 +187,12 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
                     litCSize = (lhc >> 22) + ((size_t)istart[4] << 10);
                     break;
                 }
+                DBG(DBG_LITERALS, "Litterals compressed, size = %zu, number of HOFFMAN streams: %d\n", litSize, singleStream?1:4);
                 RETURN_ERROR_IF(litSize > 0 && dst == NULL, dstSize_tooSmall, "NULL not handled");
                 RETURN_ERROR_IF(litSize > ZSTD_BLOCKSIZE_MAX, corruption_detected, "");
-                if (!singleStream)
-                    RETURN_ERROR_IF(litSize < MIN_LITERALS_FOR_4_STREAMS, literals_headerWrong,
-                        "Not enough literals (%zu) for the 4-streams mode (min %u)",
-                        litSize, MIN_LITERALS_FOR_4_STREAMS);
                 RETURN_ERROR_IF(litCSize + lhSize > srcSize, corruption_detected, "");
                 RETURN_ERROR_IF(expectedWriteSize < litSize , dstSize_tooSmall, "");
+                DBG(DBG_LITERALS, "Litterals compressed, allocating lit buffer: dstCapacity=%d, litSize=%d, expectedWriteSize=d\n", dstCapacity, litSize, expectedWriteSize);
                 ZSTD_allocateLiteralsBuffer(dctx, dst, dstCapacity, litSize, streaming, expectedWriteSize, 0);
 
                 /* prefetch huffman table if cold */
@@ -180,18 +201,21 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
                 }
 
                 if (litEncType==set_repeat) {
+                    DBG(DBG_LITERALS, "Repeating literals!\n");
                     if (singleStream) {
+                        DBG(DBG_LITERALS, "reloading single stream, len %zu->%zu\n", litCSize, litSize);
                         hufSuccess = HUF_decompress1X_usingDTable_bmi2(
                             dctx->litBuffer, litSize, istart+lhSize, litCSize,
                             dctx->HUFptr, ZSTD_DCtx_get_bmi2(dctx));
                     } else {
-                        assert(litSize >= MIN_LITERALS_FOR_4_STREAMS);
+                        DBG(DBG_LITERALS, "reloading 4 streams, len %zu->%zu\n", litCSize, litSize);
                         hufSuccess = HUF_decompress4X_usingDTable_bmi2(
                             dctx->litBuffer, litSize, istart+lhSize, litCSize,
                             dctx->HUFptr, ZSTD_DCtx_get_bmi2(dctx));
                     }
                 } else {
                     if (singleStream) {
+                        DBG(DBG_LITERALS, "new single stream, len %zu->%zu\n", litCSize, litSize);
 #if defined(HUF_FORCE_DECOMPRESS_X2)
                         hufSuccess = HUF_decompress1X_DCtx_wksp(
                             dctx->entropy.hufTable, dctx->litBuffer, litSize,
@@ -204,6 +228,7 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
                             sizeof(dctx->workspace), ZSTD_DCtx_get_bmi2(dctx));
 #endif
                     } else {
+                        DBG(DBG_LITERALS, "new 4 streams, len %zu->%zu\n", litCSize, litSize);
                         hufSuccess = HUF_decompress4X_hufOnly_wksp_bmi2(
                             dctx->entropy.hufTable, dctx->litBuffer, litSize,
                             istart+lhSize, litCSize, dctx->workspace,
@@ -228,7 +253,8 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
             }
 
         case set_basic:
-            {   size_t litSize, lhSize;
+            {   
+                size_t litSize, lhSize;
                 U32 const lhlCode = ((istart[0]) >> 2) & 3;
                 size_t expectedWriteSize = MIN(ZSTD_BLOCKSIZE_MAX, dstCapacity);
                 switch(lhlCode)
@@ -449,7 +475,9 @@ static void ZSTD_buildSeqTable_rle(ZSTD_seqSymbol* dt, U32 baseValue, U8 nbAddBi
  * cannot fail if input is valid =>
  * all inputs are presumed validated at this stage */
 FORCE_INLINE_TEMPLATE
-void ZSTD_buildFSETable_body(ZSTD_seqSymbol* dt,
+void ZSTD_buildFSETable_body(
+            const char* table_name,
+            ZSTD_seqSymbol* dt,
             const short* normalizedCounter, unsigned maxSymbolValue,
             const U32* baseValue, const U8* nbAdditionalBits,
             unsigned tableLog, void* wksp, size_t wkspSize)
@@ -462,7 +490,7 @@ void ZSTD_buildFSETable_body(ZSTD_seqSymbol* dt,
     BYTE* spread = (BYTE*)(symbolNext + MaxSeq + 1);
     U32 highThreshold = tableSize - 1;
 
-
+    DBG(DBG_FSE_BUILD_TABLE, "%s ZSTD_buildFSETable_body\n", table_name);
     /* Sanity Checks */
     assert(maxSymbolValue <= MaxSeq);
     assert(tableLog <= MaxFSELog);
@@ -514,8 +542,7 @@ void ZSTD_buildFSETable_body(ZSTD_seqSymbol* dt,
                 for (i = 8; i < n; i += 8) {
                     MEM_write64(spread + pos + i, sv);
                 }
-                assert(n>=0);
-                pos += (size_t)n;
+                pos += n;
             }
         }
         /* Now we spread those positions across the table.
@@ -557,7 +584,11 @@ void ZSTD_buildFSETable_body(ZSTD_seqSymbol* dt,
     /* Build Decoding table */
     {
         U32 u;
+        DBG(DBG_FSE_BUILD_TABLE, "%s: Build Decoding table of size %d:\n", table_name, tableSize);
+        DBG(DBG_FSE_BUILD_TABLE, "<%s[state] nbBits, nextState, nbAdditionalBits, baseValue>\n", 
+                                                    table_name);
         for (u=0; u<tableSize; u++) {
+            
             U32 const symbol = tableDecode[u].baseValue;
             U32 const nextState = symbolNext[symbol]++;
             tableDecode[u].nbBits = (BYTE) (tableLog - ZSTD_highbit32(nextState) );
@@ -565,8 +596,19 @@ void ZSTD_buildFSETable_body(ZSTD_seqSymbol* dt,
             assert(nbAdditionalBits[symbol] < 255);
             tableDecode[u].nbAdditionalBits = nbAdditionalBits[symbol];
             tableDecode[u].baseValue = baseValue[symbol];
+            DBG(DBG_FSE_BUILD_TABLE, "<%s[%03d] %03d %d %02d %07d>   ", 
+                                                    table_name, 
+                                                    u, 
+                                                    tableDecode[u].nextState,
+                                                    tableDecode[u].nbBits,
+                                                    tableDecode[u].nbAdditionalBits,
+                                                    tableDecode[u].baseValue);
+            if (u%4==3) {
+                DBG(DBG_FSE_BUILD_TABLE, "\n");
+            }
         }
     }
+    DBG(DBG_FSE_BUILD_TABLE, "\n");
 }
 
 /* Avoids the FORCE_INLINE of the _body() function. */
@@ -575,29 +617,29 @@ static void ZSTD_buildFSETable_body_default(ZSTD_seqSymbol* dt,
             const U32* baseValue, const U8* nbAdditionalBits,
             unsigned tableLog, void* wksp, size_t wkspSize)
 {
-    ZSTD_buildFSETable_body(dt, normalizedCounter, maxSymbolValue,
+    ZSTD_buildFSETable_body("???", dt, normalizedCounter, maxSymbolValue,
             baseValue, nbAdditionalBits, tableLog, wksp, wkspSize);
 }
 
 #if DYNAMIC_BMI2
-BMI2_TARGET_ATTRIBUTE static void ZSTD_buildFSETable_body_bmi2(ZSTD_seqSymbol* dt,
+BMI2_TARGET_ATTRIBUTE static void ZSTD_buildFSETable_body_bmi2(const char* table_name,ZSTD_seqSymbol* dt,
             const short* normalizedCounter, unsigned maxSymbolValue,
             const U32* baseValue, const U8* nbAdditionalBits,
             unsigned tableLog, void* wksp, size_t wkspSize)
 {
-    ZSTD_buildFSETable_body(dt, normalizedCounter, maxSymbolValue,
+    ZSTD_buildFSETable_body(table_name, dt, normalizedCounter, maxSymbolValue,
             baseValue, nbAdditionalBits, tableLog, wksp, wkspSize);
 }
 #endif
 
-void ZSTD_buildFSETable(ZSTD_seqSymbol* dt,
+void ZSTD_buildFSETable(const char* table_name,ZSTD_seqSymbol* dt,
             const short* normalizedCounter, unsigned maxSymbolValue,
             const U32* baseValue, const U8* nbAdditionalBits,
             unsigned tableLog, void* wksp, size_t wkspSize, int bmi2)
 {
 #if DYNAMIC_BMI2
     if (bmi2) {
-        ZSTD_buildFSETable_body_bmi2(dt, normalizedCounter, maxSymbolValue,
+        ZSTD_buildFSETable_body_bmi2(table_name, dt, normalizedCounter, maxSymbolValue,
                 baseValue, nbAdditionalBits, tableLog, wksp, wkspSize);
         return;
     }
@@ -611,7 +653,8 @@ void ZSTD_buildFSETable(ZSTD_seqSymbol* dt,
 /*! ZSTD_buildSeqTable() :
  * @return : nb bytes read from src,
  *           or an error code if it fails */
-static size_t ZSTD_buildSeqTable(ZSTD_seqSymbol* DTableSpace, const ZSTD_seqSymbol** DTablePtr,
+static size_t ZSTD_buildSeqTable(const char* table_name, 
+                                 ZSTD_seqSymbol* DTableSpace, const ZSTD_seqSymbol** DTablePtr,
                                  symbolEncodingType_e type, unsigned max, U32 maxLog,
                                  const void* src, size_t srcSize,
                                  const U32* baseValue, const U8* nbAdditionalBits,
@@ -619,11 +662,14 @@ static size_t ZSTD_buildSeqTable(ZSTD_seqSymbol* DTableSpace, const ZSTD_seqSymb
                                  int ddictIsCold, int nbSeq, U32* wksp, size_t wkspSize,
                                  int bmi2)
 {
+    DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: srcSize=%d\n", table_name, (int)srcSize);
     switch(type)
     {
     case set_rle :
+        DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: rle\n", table_name);
         RETURN_ERROR_IF(!srcSize, srcSize_wrong, "");
         RETURN_ERROR_IF((*(const BYTE*)src) > max, corruption_detected, "");
+
         {   U32 const symbol = *(const BYTE*)src;
             U32 const baseline = baseValue[symbol];
             U8 const nbBits = nbAdditionalBits[symbol];
@@ -632,9 +678,11 @@ static size_t ZSTD_buildSeqTable(ZSTD_seqSymbol* DTableSpace, const ZSTD_seqSymb
         *DTablePtr = DTableSpace;
         return 1;
     case set_basic :
+        DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: basic (default)\n", table_name);
         *DTablePtr = defaultTable;
         return 0;
     case set_repeat:
+        DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: repeat (from last block)\n", table_name);
         RETURN_ERROR_IF(!flagRepeatTable, corruption_detected, "");
         /* prefetch FSE table if used */
         if (ddictIsCold && (nbSeq > 24 /* heuristic */)) {
@@ -644,12 +692,16 @@ static size_t ZSTD_buildSeqTable(ZSTD_seqSymbol* DTableSpace, const ZSTD_seqSymb
         }
         return 0;
     case set_compressed :
-        {   unsigned tableLog;
+        {   
+            DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: compressed\n", table_name);
+            unsigned tableLog;
             S16 norm[MaxSeq+1];
             size_t const headerSize = FSE_readNCount(norm, &max, &tableLog, src, srcSize);
+            DBG(DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: Read header %zu bytes, tableLog=%d,maxSVPtr=%d\n", table_name, headerSize, tableLog, max);
+            DBGMEM(DBG_FSE_BUILD_TABLE, "FSE table", norm, headerSize);
             RETURN_ERROR_IF(FSE_isError(headerSize), corruption_detected, "");
             RETURN_ERROR_IF(tableLog > maxLog, corruption_detected, "");
-            ZSTD_buildFSETable(DTableSpace, norm, max, baseValue, nbAdditionalBits, tableLog, wksp, wkspSize, bmi2);
+            ZSTD_buildFSETable(table_name, DTableSpace, norm, max, baseValue, nbAdditionalBits, tableLog, wksp, wkspSize, bmi2);
             *DTablePtr = DTableSpace;
             return headerSize;
         }
@@ -667,6 +719,7 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
     const BYTE* ip = istart;
     int nbSeq;
     DEBUGLOG(5, "ZSTD_decodeSeqHeaders");
+    DBGN(DBG_GEN, "!!!!!!!!!!!  ZSTD_decodeSeqHeaders  !!!!!!!!!!!!");
 
     /* check */
     RETURN_ERROR_IF(srcSize < MIN_SEQUENCES_SIZE, srcSize_wrong, "");
@@ -691,14 +744,16 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
     *nbSeqPtr = nbSeq;
 
     /* FSE table descriptors */
+    DBGN(DBG_GEN, "!!!!!!!!!  Decode FSE table descriptors !!!!!!!!!!!!");
     RETURN_ERROR_IF(ip+1 > iend, srcSize_wrong, ""); /* minimum possible size: 1 byte for symbol encoding types */
     {   symbolEncodingType_e const LLtype = (symbolEncodingType_e)(*ip >> 6);
         symbolEncodingType_e const OFtype = (symbolEncodingType_e)((*ip >> 4) & 3);
         symbolEncodingType_e const MLtype = (symbolEncodingType_e)((*ip >> 2) & 3);
+        DBG(DBG_FSE_BUILD_TABLE, "FSE Sequences encoding (0=basic, 1=rle, 2=compressed, 3=repeat): LL=%d, ML=%d, OF=%d\n",LLtype,MLtype,OFtype);
         ip++;
 
         /* Build DTables */
-        {   size_t const llhSize = ZSTD_buildSeqTable(dctx->entropy.LLTable, &dctx->LLTptr,
+        {   size_t const llhSize = ZSTD_buildSeqTable("LL",dctx->entropy.LLTable, &dctx->LLTptr,
                                                       LLtype, MaxLL, LLFSELog,
                                                       ip, iend-ip,
                                                       LL_base, LL_bits,
@@ -708,9 +763,10 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
                                                       ZSTD_DCtx_get_bmi2(dctx));
             RETURN_ERROR_IF(ZSTD_isError(llhSize), corruption_detected, "ZSTD_buildSeqTable failed");
             ip += llhSize;
+            DBGN(DBG_GEN, "llhSize = %zu", llhSize);
         }
 
-        {   size_t const ofhSize = ZSTD_buildSeqTable(dctx->entropy.OFTable, &dctx->OFTptr,
+        {   size_t const ofhSize = ZSTD_buildSeqTable("OF", dctx->entropy.OFTable, &dctx->OFTptr,
                                                       OFtype, MaxOff, OffFSELog,
                                                       ip, iend-ip,
                                                       OF_base, OF_bits,
@@ -720,9 +776,10 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
                                                       ZSTD_DCtx_get_bmi2(dctx));
             RETURN_ERROR_IF(ZSTD_isError(ofhSize), corruption_detected, "ZSTD_buildSeqTable failed");
             ip += ofhSize;
+            DBGN(DBG_GEN, "ofhSize = %zu", ofhSize);
         }
 
-        {   size_t const mlhSize = ZSTD_buildSeqTable(dctx->entropy.MLTable, &dctx->MLTptr,
+        {   size_t const mlhSize = ZSTD_buildSeqTable("ML",dctx->entropy.MLTable, &dctx->MLTptr,
                                                       MLtype, MaxML, MLFSELog,
                                                       ip, iend-ip,
                                                       ML_base, ML_bits,
@@ -732,9 +789,10 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
                                                       ZSTD_DCtx_get_bmi2(dctx));
             RETURN_ERROR_IF(ZSTD_isError(mlhSize), corruption_detected, "ZSTD_buildSeqTable failed");
             ip += mlhSize;
+            DBGN(DBG_GEN, "mlhSize = %zu", mlhSize);
         }
     }
-
+    DBGN(DBG_GEN, "total tables size = %lu", ip-istart);
     return ip-istart;
 }
 
@@ -1156,15 +1214,18 @@ ZSTD_initFseState(ZSTD_fseState* DStatePtr, BIT_DStream_t* bitD, const ZSTD_seqS
     DStatePtr->state = BIT_readBits(bitD, DTableH->tableLog);
     DEBUGLOG(6, "ZSTD_initFseState : val=%u using %u bits",
                 (U32)DStatePtr->state, DTableH->tableLog);
+    DBGN(DBG_GEN, "ZSTD_initFseState : val=%u using %u bits",
+                (U32)DStatePtr->state, DTableH->tableLog);
     BIT_reloadDStream(bitD);
     DStatePtr->table = dt + 1;
 }
 
 FORCE_INLINE_TEMPLATE void
-ZSTD_updateFseStateWithDInfo(ZSTD_fseState* DStatePtr, BIT_DStream_t* bitD, U16 nextState, U32 nbBits)
+ZSTD_updateFseStateWithDInfo(const char* stream_name, ZSTD_fseState* DStatePtr, BIT_DStream_t* bitD, U16 nextState, U32 nbBits)
 {
     size_t const lowBits = BIT_readBits(bitD, nbBits);
     DStatePtr->state = nextState + lowBits;
+    DBG(DBG_SEQUENCES_VERBOSE, "%s read %d, got=%.2zu. New state (%.2d+%.2zu)=%zu\n",stream_name,nbBits,lowBits,nextState,lowBits,DStatePtr->state);
 }
 
 /* We need to add at most (ZSTD_WINDOWLOG_MAX_32 - 1) bits to read the maximum
@@ -1204,6 +1265,11 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
     const ZSTD_seqSymbol* const mlDInfo = seqState->stateML.table + seqState->stateML.state;
     const ZSTD_seqSymbol* const ofDInfo = seqState->stateOffb.table + seqState->stateOffb.state;
 #endif
+    DBG(DBG_SEQUENCES_VERBOSE, ">>>>>>>  Decoding sequence\n");
+    DBG_ZSTD_seqSymbol("LLN", seqState->stateLL.state, llDInfo);
+    DBG_ZSTD_seqSymbol("MLN", seqState->stateML.state, mlDInfo);
+    DBG_ZSTD_seqSymbol("OFF", seqState->stateOffb.state, ofDInfo);
+
     seq.matchLength = mlDInfo->baseValue;
     seq.litLength = llDInfo->baseValue;
     {   U32 const ofBase = ofDInfo->baseValue;
@@ -1288,13 +1354,13 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
         if (MEM_32bits())
             BIT_reloadDStream(&seqState->DStream);
 
-        DEBUGLOG(6, "seq: litL=%u, matchL=%u, offset=%u",
-                    (U32)seq.litLength, (U32)seq.matchLength, (U32)seq.offset);
+        DBGN(DBG_SEQUENCES_VERBOSE, "seq: litL=%u, matchL=%u, offset=%u", (U32)seq.litLength, (U32)seq.matchLength, (U32)seq.offset);
 
-        ZSTD_updateFseStateWithDInfo(&seqState->stateLL, &seqState->DStream, llNext, llnbBits);    /* <=  9 bits */
-        ZSTD_updateFseStateWithDInfo(&seqState->stateML, &seqState->DStream, mlNext, mlnbBits);    /* <=  9 bits */
+        ZSTD_updateFseStateWithDInfo("LLN",&seqState->stateLL, &seqState->DStream, llNext, llnbBits);    /* <=  9 bits */
+        ZSTD_updateFseStateWithDInfo("MLN",&seqState->stateML, &seqState->DStream, mlNext, mlnbBits);    /* <=  9 bits */
         if (MEM_32bits()) BIT_reloadDStream(&seqState->DStream);    /* <= 18 bits */
-        ZSTD_updateFseStateWithDInfo(&seqState->stateOffb, &seqState->DStream, ofNext, ofnbBits);  /* <=  8 bits */
+        ZSTD_updateFseStateWithDInfo("OFF",&seqState->stateOffb, &seqState->DStream, ofNext, ofnbBits);  /* <=  8 bits */
+        DBG_BIT_DStream_t("stream", &seqState->DStream);
     }
 
     return seq;
@@ -1367,9 +1433,8 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
     const BYTE* const prefixStart = (const BYTE*) (dctx->prefixStart);
     const BYTE* const vBase = (const BYTE*) (dctx->virtualStart);
     const BYTE* const dictEnd = (const BYTE*) (dctx->dictEnd);
-    DEBUGLOG(5, "ZSTD_decompressSequences_bodySplitLitBuffer");
     (void)frame;
-
+    DBG(DBG_GEN || DBG_SEQUENCES_VERBOSE, "!!!!!!!!!!! ZSTD_decompressSequences_bodySplitLitBuffer!!!!!!!!!!\n");
     /* Regen sequences */
     if (nbSeq) {
         seqState_t seqState;
@@ -1460,7 +1525,7 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
 #endif
                 if (UNLIKELY(ZSTD_isError(oneSeqSize)))
                     return oneSeqSize;
-                DEBUGLOG(6, "regenerated sequence size : %u", (U32)oneSeqSize);
+                DBGN(DBG_SEQUENCES_VERBOSE, "regenerated sequence size split: %u", (U32)oneSeqSize);                
                 op += oneSeqSize;
                 if (UNLIKELY(!--nbSeq))
                     break;
@@ -1489,7 +1554,7 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
 #endif
                     if (UNLIKELY(ZSTD_isError(oneSeqSize)))
                         return oneSeqSize;
-                    DEBUGLOG(6, "regenerated sequence size : %u", (U32)oneSeqSize);
+                    DBGN(DBG_SEQUENCES_VERBOSE, "bodySplitLitBuffer: regenerated sequence size from litExtraBuffer: %u", (U32)oneSeqSize);
                     op += oneSeqSize;
                     if (--nbSeq)
                         BIT_reloadDStream(&(seqState.DStream));
@@ -1526,7 +1591,7 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
 #endif
                 if (UNLIKELY(ZSTD_isError(oneSeqSize)))
                     return oneSeqSize;
-                DEBUGLOG(6, "regenerated sequence size : %u", (U32)oneSeqSize);
+                DBGN(DBG_SEQUENCES_VERBOSE, "bodySplitLitBuffer: regenerated sequence size decode: %u", (U32)oneSeqSize);
                 op += oneSeqSize;
                 if (UNLIKELY(!--nbSeq))
                     break;
@@ -1586,7 +1651,7 @@ ZSTD_decompressSequences_body(ZSTD_DCtx* dctx,
     const BYTE* const dictEnd = (const BYTE*)(dctx->dictEnd);
     DEBUGLOG(5, "ZSTD_decompressSequences_body: nbSeq = %d", nbSeq);
     (void)frame;
-
+    DBG(DBG_GEN || DBG_SEQUENCES_VERBOSE, "!!!!!!!!!!! ZSTD_decompressSequences_body!!!!!!!!!!\n");
     /* Regen sequences */
     if (nbSeq) {
         seqState_t seqState;
@@ -1627,8 +1692,8 @@ ZSTD_decompressSequences_body(ZSTD_DCtx* dctx,
             if (frame) ZSTD_assertValidSequence(dctx, op, oend, sequence, prefixStart, vBase);
 #endif
             if (UNLIKELY(ZSTD_isError(oneSeqSize)))
-                return oneSeqSize;
-            DEBUGLOG(6, "regenerated sequence size : %u", (U32)oneSeqSize);
+                return oneSeqSize;      
+            DBGN(DBG_SEQUENCES_VERBOSE, "regenerated sequence size (litl + match): %u", (U32)oneSeqSize);            
             op += oneSeqSize;
             if (UNLIKELY(!--nbSeq))
                 break;
@@ -1928,6 +1993,7 @@ ZSTD_decompressSequences(ZSTD_DCtx* dctx, void* dst, size_t maxDstSize,
                    const ZSTD_longOffset_e isLongOffset,
                    const int frame)
 {
+    DBGN(DBG_GEN, "!!!!!!!!! ZSTD_decompressSequences !!!!!!!!!");
     DEBUGLOG(5, "ZSTD_decompressSequences");
 #if DYNAMIC_BMI2
     if (ZSTD_DCtx_get_bmi2(dctx)) {
@@ -2016,23 +2082,16 @@ ZSTD_decompressBlock_internal(ZSTD_DCtx* dctx,
      * Offsets are long if they are larger than 2^STREAM_ACCUMULATOR_MIN.
      * We don't expect that to be the case in 64-bit mode.
      * In block mode, window size is not known, so we have to be conservative.
-     * (note: it could possibly be evaluated from current-lowLimit)
+     * (note: but it could be evaluated from current-lowLimit)
      */
     ZSTD_longOffset_e const isLongOffset = (ZSTD_longOffset_e)(MEM_32bits() && (!frame || (dctx->fParams.windowSize > (1ULL << STREAM_ACCUMULATOR_MIN))));
     DEBUGLOG(5, "ZSTD_decompressBlock_internal (size : %u)", (U32)srcSize);
 
-    /* Note : the wording of the specification
-     * allows compressed block to be sized exactly ZSTD_BLOCKSIZE_MAX.
-     * This generally does not happen, as it makes little sense,
-     * since an uncompressed block would feature same size and have no decompression cost.
-     * Also, note that decoder from reference libzstd before < v1.5.4
-     * would consider this edge case as an error.
-     * As a consequence, avoid generating compressed blocks of size ZSTD_BLOCKSIZE_MAX
-     * for broader compatibility with the deployed ecosystem of zstd decoders */
-    RETURN_ERROR_IF(srcSize > ZSTD_BLOCKSIZE_MAX, srcSize_wrong, "");
+    RETURN_ERROR_IF(srcSize >= ZSTD_BLOCKSIZE_MAX, srcSize_wrong, "");
 
     /* Decode literals section */
     {   size_t const litCSize = ZSTD_decodeLiteralsBlock(dctx, src, srcSize, dst, dstCapacity, streaming);
+        DBGN(DBG_GEN, "ZSTD_decodeLiteralsBlock : cSize=%u, nbLiterals=%zu", (U32)litCSize, dctx->litSize);
         DEBUGLOG(5, "ZSTD_decodeLiteralsBlock : cSize=%u, nbLiterals=%zu", (U32)litCSize, dctx->litSize);
         if (ZSTD_isError(litCSize)) return litCSize;
         ip += litCSize;
@@ -2054,7 +2113,7 @@ ZSTD_decompressBlock_internal(ZSTD_DCtx* dctx,
         if (ZSTD_isError(seqHSize)) return seqHSize;
         ip += seqHSize;
         srcSize -= seqHSize;
-
+        DBGN(DBG_GEN, "srcSize left:%zu", srcSize);
         RETURN_ERROR_IF(dst == NULL && nbSeq > 0, dstSize_tooSmall, "NULL not handled");
 
 #if !defined(ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT) && \

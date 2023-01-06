@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright (c) Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -58,7 +58,7 @@ size_t ZSTD_decompressBlock_internal(ZSTD_DCtx* dctx,
  * defined in zstd_decompress_internal.h.
  * Internal use only.
  */
-void ZSTD_buildFSETable(ZSTD_seqSymbol* dt,
+void ZSTD_buildFSETable(const char* table_name, ZSTD_seqSymbol* dt,
              const short* normalizedCounter, unsigned maxSymbolValue,
              const U32* baseValue, const U8* nbAdditionalBits,
                    unsigned tableLog, void* wksp, size_t wkspSize,

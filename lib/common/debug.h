@@ -1,7 +1,7 @@
 /* ******************************************************************
  * debug
  * Part of FSE library
- * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright (c) Yann Collet, Facebook, Inc.
  *
  * You can contact the author at :
  * - Source repository : https://github.com/Cyan4973/FiniteStateEntropy
@@ -46,10 +46,24 @@ extern "C" {
 /* DEBUGLEVEL is expected to be defined externally,
  * typically through compiler command line.
  * Value must be a number. */
-#ifndef DEBUGLEVEL
-#  define DEBUGLEVEL 0
-#endif
+#undef DEBUGLEVEL
+#define DEBUGLEVEL 0
 
+#include <stdio.h>
+void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
+#define DBG(X,...) do {if (X) fprintf(stderr, __VA_ARGS__);} while(0)
+#define DBGN(X,...) if (X) {DBG(X, __VA_ARGS__); DBG(X, "\n");}
+
+#define DBG_GEN 1
+#define DBG_EXTRA 1
+
+#define DBG_HEADERS_PARSING 1
+#define DBG_LITERALS       1
+#define DBG_FSE_BUILD_TABLE 0
+#define DBG_SEQUENCES_VERBOSE 0
+
+#define DBG_HUFF 1
+#define DBG_ASN 1
 
 /* recommended values for DEBUGLEVEL :
  * 0 : release mode, no debug, all run-time checks disabled
