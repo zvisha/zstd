@@ -62,6 +62,28 @@ void DBG_BIT_DStream_t(const char* name, BIT_DStream_t *s) {
     DBG(DBG_SEQUENCES, "%s BIT_DStream_t: bitContainer:%zu, bitsConsumed:%d, ptr:%p, start:%p, limitPtr:%p\n",name, s->bitContainer, s->bitsConsumed, s->ptr, s->start, s->limitPtr);
 }
 
+// Frst entry is header with size (tableLog).
+void DBG_fse_ZSTD_seqSymbol_table(const char* table_name, const ZSTD_seqSymbol* tableDecode) {
+    U32 u;
+    ZSTD_seqSymbol_header* DTableH  = (ZSTD_seqSymbol_header*)(void*)tableDecode;
+
+    DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "%s: PRINTING decoding table of size %d, fastMode=%d:\n", table_name, 1<<DTableH->tableLog, DTableH->fastMode);
+    DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "<%s[state] nextState, nbAdditionalBits, nbBits, baseValue>\n", 
+                                                table_name);
+    for (u=0; u<(U32)(1<<DTableH->tableLog); u++) {
+        DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, " %s[%03d] %3d %2d %2d %9d  | ", 
+                                                table_name, 
+                                                u, 
+                                                tableDecode[u+1].nextState,
+                                                tableDecode[u+1].nbAdditionalBits,
+                                                tableDecode[u+1].nbBits,
+                                                tableDecode[u+1].baseValue);
+        if (u%4==3) {
+            DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "\n");
+        }
+    }
+}
+
 /*_*******************************************************
 *  Memory operations
 **********************************************************/
@@ -459,9 +481,11 @@ static void ZSTD_buildSeqTable_rle(ZSTD_seqSymbol* dt, U32 baseValue, U8 nbAddBi
     ZSTD_seqSymbol_header* const DTableH = (ZSTD_seqSymbol_header*)ptr;
     ZSTD_seqSymbol* const cell = dt + 1;
 
+    DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "Sequences FSE Table RLE: Setting first entry to <0s>\n");
     DTableH->tableLog = 0;
     DTableH->fastMode = 0;
 
+    DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "Sequences FSE Table RLE: Setting second entry to baseValue=%d nbAddBits=%d\n", baseValue, nbAddBits);
     cell->nbBits = 0;
     cell->nextState = 0;
     assert(nbAddBits < 255);
@@ -584,9 +608,8 @@ void ZSTD_buildFSETable_body(
     /* Build Decoding table */
     {
         U32 u;
-        DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "%s: Build Decoding table of size %d:\n", table_name, tableSize);
-        DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "<%s[state] nbBits, nextState, nbAdditionalBits, baseValue>\n", 
-                                                    table_name);
+        DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "%s: Building Decoding table of size %d:\n", table_name, tableSize);
+        // DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "<%s[state]  nextState, nbAdditionalBits, nbBits, baseValue>\n", table_name);
         for (u=0; u<tableSize; u++) {
             
             U32 const symbol = tableDecode[u].baseValue;
@@ -596,16 +619,16 @@ void ZSTD_buildFSETable_body(
             assert(nbAdditionalBits[symbol] < 255);
             tableDecode[u].nbAdditionalBits = nbAdditionalBits[symbol];
             tableDecode[u].baseValue = baseValue[symbol];
-            DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "<%s[%03d] %03d %d %02d %07d>   ", 
-                                                    table_name, 
-                                                    u, 
+           /* DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "<%s[%03d] %03d %02d %d %07d>   ", 
+                                                    table_name,
+                                                    u,
                                                     tableDecode[u].nextState,
-                                                    tableDecode[u].nbBits,
                                                     tableDecode[u].nbAdditionalBits,
+                                                    tableDecode[u].nbBits,
                                                     tableDecode[u].baseValue);
             if (u%4==3) {
                 DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "\n");
-            }
+            }*/
         }
     }
     DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "\n");
@@ -650,6 +673,8 @@ void ZSTD_buildFSETable(const char* table_name,ZSTD_seqSymbol* dt,
 }
 
 
+
+
 /*! ZSTD_buildSeqTable() :
  * @return : nb bytes read from src,
  *           or an error code if it fails */
@@ -658,7 +683,7 @@ static size_t ZSTD_buildSeqTable(const char* table_name,
                                  symbolEncodingType_e type, unsigned max, U32 maxLog,
                                  const void* src, size_t srcSize,
                                  const U32* baseValue, const U8* nbAdditionalBits,
-                                 const ZSTD_seqSymbol* defaultTable, U32 flagRepeatTable,
+                                 const ZSTD_seqSymbol* defaultTable , U32 flagRepeatTable,
                                  int ddictIsCold, int nbSeq, U32* wksp, size_t wkspSize,
                                  int bmi2)
 {
@@ -676,10 +701,12 @@ static size_t ZSTD_buildSeqTable(const char* table_name,
             ZSTD_buildSeqTable_rle(DTableSpace, baseline, nbBits);
         }
         *DTablePtr = DTableSpace;
+        DBG_fse_ZSTD_seqSymbol_table(table_name, *DTablePtr);
         return 1;
     case set_basic :
-        DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: basic (default)\n", table_name);
+        DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: basic (default table)\n", table_name);
         *DTablePtr = defaultTable;
+        DBG_fse_ZSTD_seqSymbol_table(table_name, *DTablePtr); 
         return 0;
     case set_repeat:
         DBG(DBG_GEN || DBG_FSE_BUILD_TABLE, "%s: Build Sequences Table: repeat (from last block)\n", table_name);
@@ -702,6 +729,8 @@ static size_t ZSTD_buildSeqTable(const char* table_name,
             RETURN_ERROR_IF(FSE_isError(headerSize), corruption_detected, "");
             RETURN_ERROR_IF(tableLog > maxLog, corruption_detected, "");
             ZSTD_buildFSETable(table_name, DTableSpace, norm, max, baseValue, nbAdditionalBits, tableLog, wksp, wkspSize, bmi2);
+            DBG_fse_ZSTD_seqSymbol_table(table_name, DTableSpace);
+
             *DTablePtr = DTableSpace;
             return headerSize;
         }
@@ -718,8 +747,6 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
     const BYTE* const iend = istart + srcSize;
     const BYTE* ip = istart;
     int nbSeq;
-    DEBUGLOG(5, "ZSTD_decodeSeqHeaders");
-    DBGN(DBG_GEN, "!!!!!!!!!!!  ZSTD_decodeSeqHeaders  !!!!!!!!!!!!");
 
     /* check */
     RETURN_ERROR_IF(srcSize < MIN_SEQUENCES_SIZE, srcSize_wrong, "");
@@ -744,7 +771,7 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
     *nbSeqPtr = nbSeq;
 
     /* FSE table descriptors */
-    DBGN(DBG_GEN, "!!!!!!!!!  Decode FSE table descriptors !!!!!!!!!!!!");
+    DBGN(DBG_GEN, "FSE Decode sequence table descriptors");
     RETURN_ERROR_IF(ip+1 > iend, srcSize_wrong, ""); /* minimum possible size: 1 byte for symbol encoding types */
     {   symbolEncodingType_e const LLtype = (symbolEncodingType_e)(*ip >> 6);
         symbolEncodingType_e const OFtype = (symbolEncodingType_e)((*ip >> 4) & 3);
@@ -758,7 +785,7 @@ size_t ZSTD_decodeSeqHeaders(ZSTD_DCtx* dctx, int* nbSeqPtr,
                                                       ip, iend-ip,
                                                       LL_base, LL_bits,
                                                       LL_defaultDTable, dctx->fseEntropy,
-                                                      dctx->ddictIsCold, nbSeq,
+                                                      dctx->ddictIsCold,  nbSeq,
                                                       dctx->workspace, sizeof(dctx->workspace),
                                                       ZSTD_DCtx_get_bmi2(dctx));
             RETURN_ERROR_IF(ZSTD_isError(llhSize), corruption_detected, "ZSTD_buildSeqTable failed");
