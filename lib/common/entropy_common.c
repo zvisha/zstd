@@ -54,7 +54,7 @@ size_t FSE_readNCount_body(short* normalizedCounter, unsigned* maxSVPtr, unsigne
     unsigned charnum = 0;
     unsigned const maxSV1 = *maxSVPtr + 1;
     int previous0 = 0;
-
+    DBG(DBG_SEQ_FSE || DBG_HUFF_FSE, "%s - decompress Huffman table for literals\n", __FUNCTION__);
     if (hbSize < 8) {
         /* This function only works when hbSize >= 8 */
         char buffer[8] = {0};
@@ -251,12 +251,13 @@ HUF_readStats_body(BYTE* huffWeight, size_t hwSize, U32* rankStats,
     const BYTE* ip = (const BYTE*) src;
     size_t iSize;
     size_t oSize;
-
+    DBG(DBG_HUFF, "%s - read huffman table\n", __FUNCTION__);
     if (!srcSize) return ERROR(srcSize_wrong);
     iSize = ip[0];
     /* ZSTD_memset(huffWeight, 0, hwSize);   *//* is not necessary, even though some analyzer complain ... */
 
     if (iSize >= 128) {  /* special header */
+        DBG(DBG_HUFF, "huffman table for literals = %zu (>=128), read uncompressed!\n", iSize);
         oSize = iSize - 127;
         iSize = ((oSize+1)/2);
         if (iSize+1 > srcSize) return ERROR(srcSize_wrong);
@@ -268,6 +269,7 @@ HUF_readStats_body(BYTE* huffWeight, size_t hwSize, U32* rankStats,
                 huffWeight[n+1] = ip[n/2] & 15;
     }   }   }
     else  {   /* header compressed with FSE (normal case) */
+        DBG(DBG_HUFF, "huffman table for literals = %zu (<128), FSE compressed!\n", iSize);
         if (iSize+1 > srcSize) return ERROR(srcSize_wrong);
         /* max (hwSize-1) values decoded, as last one is implied */
         oSize = FSE_decompress_wksp_bmi2(huffWeight, hwSize-1, ip+1, iSize, 6, workSpace, wkspSize, bmi2);

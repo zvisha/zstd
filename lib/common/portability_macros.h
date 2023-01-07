@@ -129,9 +129,7 @@
     ZSTD_ASM_SUPPORTED &&                                         \
     defined(__x86_64__) &&                                        \
     (DYNAMIC_BMI2 || defined(__BMI2__))
-# define ZSTD_ENABLE_ASM_X86_64_BMI2 1
 #else
-# define ZSTD_ENABLE_ASM_X86_64_BMI2 0
 #endif
 
 /*

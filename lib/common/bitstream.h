@@ -96,6 +96,7 @@ typedef struct {
     const char* ptr;
     const char* start;
     const char* limitPtr;
+    int         stream_name_for_dbg;
 } BIT_DStream_t;
 
 typedef enum { BIT_DStream_unfinished = 0,
@@ -252,7 +253,7 @@ MEM_STATIC size_t BIT_closeCStream(BIT_CStream_t* bitC)
 MEM_STATIC size_t BIT_initDStream(BIT_DStream_t* bitD, const void* srcBuffer, size_t srcSize)
 {
     if (srcSize < 1) { ZSTD_memset(bitD, 0, sizeof(*bitD)); return ERROR(srcSize_wrong); }
-
+    DBG(1 , "Init BIT stream of len %zu\n", srcSize);
     bitD->start = (const char*)srcBuffer;
     bitD->limitPtr = bitD->start + sizeof(bitD->bitContainer);
 

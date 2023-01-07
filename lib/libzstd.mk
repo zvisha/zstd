@@ -36,16 +36,16 @@ ifneq ($(ZSTD_LIB_MINIFY), 0)
   ZSTD_NO_INLINE ?= 1
   ZSTD_STRIP_ERROR_STRINGS ?= 1
 else
-  HUF_FORCE_DECOMPRESS_X1 ?= 0
+  HUF_FORCE_DECOMPRESS_X1 ?= 1
   HUF_FORCE_DECOMPRESS_X2 ?= 0
-  ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT ?= 0
+  ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT ?= 1
   ZSTD_FORCE_DECOMPRESS_SEQUENCES_LONG ?= 0
   ZSTD_NO_INLINE ?= 0
   ZSTD_STRIP_ERROR_STRINGS ?= 0
 endif
 
 # Assembly support
-ZSTD_NO_ASM ?= 0
+ZSTD_NO_ASM ?= 1
 
 ##################################################################
 # libzstd helpers

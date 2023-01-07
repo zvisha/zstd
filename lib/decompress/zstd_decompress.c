@@ -1299,9 +1299,11 @@ size_t ZSTD_decompressContinue(ZSTD_DCtx* dctx, void* dst, size_t dstCapacity, c
             dctx->expected = cBlockSize;
             dctx->bType = bp.blockType;
             dctx->rleSize = bp.origSize;
-            DBG(DBG_HEADERS_PARSING, "BLOCK header: blockType=%d (raw=0, rle=1, compressed=2, reserved=3), lastBlock=%d, cBlockSize=%zu \n",dctx->bType, bp.lastBlock, cBlockSize);
+            DBG(1 || DBG_HEADERS_PARSING, "****************************************************************************\n");
+            DBG(1 || DBG_HEADERS_PARSING, "**   NEW BLOCK! Header: blockType=%d (raw=0, rle=1, compressed=2, reserved=3), lastBlock=%d, cBlockSize=%zu \n",dctx->bType, bp.lastBlock, cBlockSize);
+            DBG(1 || DBG_HEADERS_PARSING, "****************************************************************************\n");
             if (dctx->bType == bt_rle) {
-                DBG(DBG_HEADERS_PARSING, "BLOCK header: rle open size=%d\n",dctx->rleSize);
+                DBG(DBG_HEADERS_PARSING, "BLOCK header: rle open size=%zu\n",dctx->rleSize);
             }
             if (cBlockSize) {
                 dctx->stage = bp.lastBlock ? ZSTDds_decompressLastBlock : ZSTDds_decompressBlock;
@@ -1388,7 +1390,7 @@ size_t ZSTD_decompressContinue(ZSTD_DCtx* dctx, void* dst, size_t dstCapacity, c
             if (dctx->validateChecksum) {
                 U32 const h32 = (U32)XXH64_digest(&dctx->xxhState);
                 U32 const check32 = MEM_readLE32(src);
-                DEBUGLOG(4, "ZSTD_decompressContinue: checksum : calculated %08X :: %08X read", (unsigned)h32, (unsigned)check32);
+                DBGN(DBG_HEADERS_PARSING, "Checksum: calculated %x, read %x \n", h32, check32);
                 RETURN_ERROR_IF(check32 != h32, checksum_wrong, "");
             }
             ZSTD_DCtx_trace_end(dctx, dctx->decodedSize, dctx->processedCSize, /* streaming */ 1);

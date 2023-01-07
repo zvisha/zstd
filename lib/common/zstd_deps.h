@@ -107,5 +107,11 @@
 
 #include <stdint.h>
 
+
 #endif /* ZSTD_DEPS_STDINT */
 #endif /* ZSTD_DEPS_NEED_STDINT */
+
+// Zvi - to make code simpler
+#define HUF_FORCE_DECOMPRESS_X1
+#define ZSTD_DISABLE_ASM
+#define ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT

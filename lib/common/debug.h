@@ -57,12 +57,14 @@ void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 #define DBG_GEN 1
 #define DBG_EXTRA 1
 
-#define DBG_HEADERS_PARSING 1
-#define DBG_LITERALS       1
-#define DBG_FSE_BUILD_TABLE 1
-#define DBG_SEQUENCES_VERBOSE 1
+#define DBG_HEADERS_PARSING   1
+#define DBG_LITERALS          1
+#define DBG_HUFF              1
+#define DBG_HUFF_FSE          1
+#define DBG_SEQ_FSE           1
+#define DBG_FSE_BUILD_TABLE   1
+#define DBG_SEQUENCES         1
 
-#define DBG_HUFF 1
 #define DBG_ASN 1
 
 /* recommended values for DEBUGLEVEL :
