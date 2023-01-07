@@ -67,6 +67,19 @@ void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 
 #define DBG_ASN 1
 
+// SOW
+//File for literal section.
+//File for sequence section
+//(c) For literal section:
+//i. Huffman tree description (if exists), decoded and encoded.
+//ii. Stream information (one or 4 files). Encoded and decoded.
+//(d) For sequence section:
+//i. Literal length table, if exists. Encoded and decoded.
+//ii. Offset table, if exists. Encoded and decoded.
+//iii. Match length table, if exists. Encoded and decoded.
+//iv. Bit Stream - Encoded and decoded.
+
+
 /* recommended values for DEBUGLEVEL :
  * 0 : release mode, no debug, all run-time checks disabled
  * 1 : enables assert() only, no display

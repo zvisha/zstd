@@ -1390,7 +1390,7 @@ size_t ZSTD_decompressContinue(ZSTD_DCtx* dctx, void* dst, size_t dstCapacity, c
             if (dctx->validateChecksum) {
                 U32 const h32 = (U32)XXH64_digest(&dctx->xxhState);
                 U32 const check32 = MEM_readLE32(src);
-                DBGN(DBG_HEADERS_PARSING, "Checksum: calculated %x, read %x \n", h32, check32);
+                DBG(DBG_HEADERS_PARSING, "Checksum: calculated %x, read %x \n", h32, check32);
                 RETURN_ERROR_IF(check32 != h32, checksum_wrong, "");
             }
             ZSTD_DCtx_trace_end(dctx, dctx->decodedSize, dctx->processedCSize, /* streaming */ 1);

@@ -144,6 +144,18 @@ static DTableDesc HUF_getDTableDesc(const HUF_DTable* table)
     return dtd;
 }
 
+
+
+void DBG_bits(int b_print, U32 number, U32 bits, U32 tableLog) {
+    // per bit print 0 or 1
+    if (b_print) {
+            DBG(1, "(%x)",number);
+        for (int i = tableLog-1, j=0; i >= 0 && j<(int)bits; i--, j++) {
+            DBG(1, "%x",((number>>(i)) & 1));
+        }
+    }
+}
+
 #if 0
 
 static size_t HUF_initDStream(BYTE const* ip) {
@@ -363,10 +375,13 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
 
     DEBUG_STATIC_ASSERT(sizeof(DTableDesc) == sizeof(HUF_DTable));
     /* ZSTD_memset(huffWeight, 0, sizeof(huffWeight)); */   /* is not necessary, even though some analyzer complain ... */
+    DBG(DBG_HUFF, "**** Read (maybe uncompress) Huffman Descriptor Table from stream ****\n");
+
 
     iSize = HUF_readStats_wksp(wksp->huffWeight, HUF_SYMBOLVALUE_MAX + 1, wksp->rankVal, &nbSymbols, &tableLog, src, srcSize, wksp->statsWksp, sizeof(wksp->statsWksp), bmi2);
     if (HUF_isError(iSize)) return iSize;
 
+    DBG(DBG_HUFF, "**** Build Huffman Descriptor Table in memory ****\n");
 
     /* Table header */
     {   DTableDesc dtd = HUF_getDTableDesc(DTable);
@@ -425,6 +440,7 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
         int symbol=wksp->rankVal[0];
         int rankStart=0;
         for (w=1; w<tableLog+1; ++w) {
+            DBG(DBG_HUFF, "HUF storing symbols of weight %d\n", w);
             int const symbolCount = wksp->rankVal[w];
             int const length = (1 << w) >> 1;
             int uStart = rankStart;
@@ -437,6 +453,9 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
                     HUF_DEltX1 D;
                     D.byte = wksp->symbols[symbol + s];
                     D.nbBits = nbBits;
+                    DBG(DBG_HUFF, "%d:c1: Symbol %d(%c), nbBits %d - ",uStart, D.byte, D.byte, D.nbBits);
+                    DBG_bits(DBG_HUFF, uStart, nbBits, tableLog);
+                    DBG(DBG_HUFF,"\n");
                     dt[uStart] = D;
                     uStart += 1;
                 }
@@ -448,6 +467,9 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
                     D.nbBits = nbBits;
                     dt[uStart+0] = D;
                     dt[uStart+1] = D;
+                    DBG(DBG_HUFF, "%d:c2: Symbol %d(%c), nbBits %d - ",uStart, D.byte, D.byte,D.nbBits);
+                     DBG_bits(DBG_HUFF, uStart, nbBits, tableLog);
+                    DBG(DBG_HUFF,"\n");
                     uStart += 2;
                 }
                 break;
@@ -455,6 +477,9 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
                 for (s=0; s<symbolCount; ++s) {
                     U64 const D4 = HUF_DEltX1_set4(wksp->symbols[symbol + s], nbBits);
                     MEM_write64(dt + uStart, D4);
+                    DBG(DBG_HUFF, "%d:c4: Symbol %d(%c), nbBits %d - ",uStart, wksp->symbols[symbol + s], wksp->symbols[symbol + s], nbBits);
+                     DBG_bits(DBG_HUFF, uStart, nbBits, tableLog);
+                    DBG(DBG_HUFF,"\n");
                     uStart += 4;
                 }
                 break;
@@ -463,6 +488,9 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
                     U64 const D4 = HUF_DEltX1_set4(wksp->symbols[symbol + s], nbBits);
                     MEM_write64(dt + uStart, D4);
                     MEM_write64(dt + uStart + 4, D4);
+                    DBG(DBG_HUFF, "%d:c8: Symbol %d(%c), nbBits %d -", uStart,wksp->symbols[symbol + s], wksp->symbols[symbol + s], nbBits);
+                     DBG_bits(DBG_HUFF, uStart, nbBits, tableLog);
+                    DBG(DBG_HUFF,"\n");
                     uStart += 8;
                 }
                 break;
@@ -475,6 +503,9 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
                         MEM_write64(dt + uStart + u + 8, D4);
                         MEM_write64(dt + uStart + u + 12, D4);
                     }
+                    DBG(DBG_HUFF, "%d:cX: Symbol %d(%c), nbBits %d - ",uStart, wksp->symbols[symbol + s],wksp->symbols[symbol + s],  nbBits);
+                    DBG_bits(DBG_HUFF, uStart, nbBits, tableLog);
+                    DBG(DBG_HUFF,"\n");
                     assert(u == length);
                     uStart += length;
                 }
@@ -601,8 +632,10 @@ HUF_decompress4X1_usingDTable_internal_body(
         BYTE* op3 = opStart3;
         BYTE* op4 = opStart4;
         DTableDesc const dtd = HUF_getDTableDesc(DTable);
+        DBG(DBG_HUFF, "HUFF table descriptor: maxTableLog=%d;  tableType=%d;  tableLog=%d;  reserved=%d\n",dtd.maxTableLog,dtd.tableType,dtd.tableLog,dtd.reserved);
         U32 const dtLog = dtd.tableLog;
         U32 endSignal = 1;
+
 
         if (length4 > cSrcSize) return ERROR(corruption_detected);   /* overflow */
         if (opStart4 > oend) return ERROR(corruption_detected);      /* overflow */

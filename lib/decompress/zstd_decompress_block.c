@@ -55,7 +55,7 @@
 **********************************************************/
 
 void DBG_ZSTD_seqSymbol(const char* name, int state,const ZSTD_seqSymbol* s) {
-    DBG(DBG_SEQUENCES, "%s ZSTD_seqSymbol: current state:%3d, nextState:%3d, nbBits:%d, nbAdditionalBits:%2d, baseValue:%3d\n",name, state, s->nextState, s->nbBits, s->nbAdditionalBits, s->baseValue);
+    DBG(DBG_SEQUENCES, "%s current state:%3d, nextState:%3d, nbAdditionalBits:%2d, nbBits:%d, baseValue:%3d\n",name, state, s->nextState, s->nbAdditionalBits, s->nbBits, s->baseValue);
 }
 
 void DBG_BIT_DStream_t(const char* name, BIT_DStream_t *s) {
@@ -65,7 +65,7 @@ void DBG_BIT_DStream_t(const char* name, BIT_DStream_t *s) {
 // Frst entry is header with size (tableLog).
 void DBG_fse_ZSTD_seqSymbol_table(const char* table_name, const ZSTD_seqSymbol* tableDecode) {
     U32 u;
-    ZSTD_seqSymbol_header* DTableH  = (ZSTD_seqSymbol_header*)(void*)tableDecode;
+    const ZSTD_seqSymbol_header* DTableH  = (const ZSTD_seqSymbol_header*)(const void*)tableDecode;
 
     DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "%s: PRINTING decoding table of size %d, fastMode=%d:\n", table_name, 1<<DTableH->tableLog, DTableH->fastMode);
     DBG(DBG_SEQ_FSE || DBG_FSE_BUILD_TABLE, "<%s[state] nextState, nbAdditionalBits, nbBits, baseValue>\n", 
@@ -163,12 +163,10 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
                           const void* src, size_t srcSize,   /* note : srcSize < BLOCKSIZE */
                           void* dst, size_t dstCapacity, const streaming_operation streaming)
 {
-    DEBUGLOG(5, "ZSTD_decodeLiteralsBlock");
-    DBG(DBG_LITERALS, "!!!!!!!!!!!! ZSTD_decodeLiteralsBlock !!!!!!!!!!!\n");
     RETURN_ERROR_IF(srcSize < MIN_CBLOCK_SIZE, corruption_detected, "");
 
     {   const BYTE* const istart = (const BYTE*) src;
-        DBG(DBG_LITERALS, "ZSTD_decodeLiteralsBlock: reading byte %02x\n", istart[0]);
+        DBG(DBG_LITERALS, "Decoding literals header: reading byte %02x\n", istart[0]);
         symbolEncodingType_e const litEncType = (symbolEncodingType_e)(istart[0] & 3);
         DBG(DBG_LITERALS, "BLOCK LITERALS decode: type %d (basic=0, rle=1, compressed=2, repeat=3)\n", litEncType);
         switch(litEncType)
@@ -183,7 +181,7 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
             {   size_t lhSize, litSize, litCSize;
                 U32 singleStream=0;
                 U32 const lhlCode = (istart[0] >> 2) & 3;
-                DBG(DBG_LITERALS, "Literals compressed literals size of size = %d\n", lhlCode);
+                DBG(DBG_LITERALS, "Literals compressed, (size of size read = %d)\n", lhlCode);
                 U32 const lhc = MEM_readLE32(istart);
                 size_t hufSuccess;
                 size_t expectedWriteSize = MIN(ZSTD_BLOCKSIZE_MAX, dstCapacity);
@@ -221,7 +219,7 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
                 if (dctx->ddictIsCold && (litSize > 768 /* heuristic */)) {
                     PREFETCH_AREA(dctx->HUFptr, sizeof(dctx->entropy.hufTable));
                 }
-
+                DBG(DBG_LITERALS, "Max-Size of huff descriptor table: %zu\n",sizeof(dctx->entropy.hufTable));
                 if (litEncType==set_repeat) {
                     DBG(DBG_LITERALS, "Repeating literals!\n");
                     if (singleStream) {
@@ -278,6 +276,7 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
             {   
                 size_t litSize, lhSize;
                 U32 const lhlCode = ((istart[0]) >> 2) & 3;
+                DBG(DBG_LITERALS, "Literals basic, (size of size read = %d)\n", lhlCode);
                 size_t expectedWriteSize = MIN(ZSTD_BLOCKSIZE_MAX, dstCapacity);
                 switch(lhlCode)
                 {
@@ -295,10 +294,10 @@ size_t ZSTD_decodeLiteralsBlock(ZSTD_DCtx* dctx,
                     litSize = MEM_readLE24(istart) >> 4;
                     break;
                 }
-
                 RETURN_ERROR_IF(litSize > 0 && dst == NULL, dstSize_tooSmall, "NULL not handled");
                 RETURN_ERROR_IF(expectedWriteSize < litSize, dstSize_tooSmall, "");
                 ZSTD_allocateLiteralsBuffer(dctx, dst, dstCapacity, litSize, streaming, expectedWriteSize, 1);
+                DBG(DBG_LITERALS, "Literals size = %zu, copied to the buffer\n", litSize);
                 if (lhSize+litSize+WILDCOPY_OVERLENGTH > srcSize) {  /* risk reading beyond src buffer with wildcopy */
                     RETURN_ERROR_IF(litSize+lhSize > srcSize, corruption_detected, "");
                     if (dctx->litBufferLocation == ZSTD_split)
@@ -1234,15 +1233,12 @@ size_t ZSTD_execSequenceSplitLitBuffer(BYTE* op,
 
 
 static void
-ZSTD_initFseState(ZSTD_fseState* DStatePtr, BIT_DStream_t* bitD, const ZSTD_seqSymbol* dt)
+ZSTD_initFseState(const char* table_name, ZSTD_fseState* DStatePtr, BIT_DStream_t* bitD, const ZSTD_seqSymbol* dt)
 {
     const void* ptr = dt;
     const ZSTD_seqSymbol_header* const DTableH = (const ZSTD_seqSymbol_header*)ptr;
     DStatePtr->state = BIT_readBits(bitD, DTableH->tableLog);
-    DEBUGLOG(DBG_SEQUENCES, "ZSTD_initFseState : val=%u using %u bits",
-                (U32)DStatePtr->state, DTableH->tableLog);
-    DBGN(DBG_GEN, "ZSTD_initFseState : val=%u using %u bits",
-                (U32)DStatePtr->state, DTableH->tableLog);
+    DBG(DBG_GEN, "%s: initial FSE State=%u (read %u bits from stream)\n",table_name, (U32)DStatePtr->state, DTableH->tableLog);
     BIT_reloadDStream(bitD);
     DStatePtr->table = dt + 1;
 }
@@ -1252,7 +1248,7 @@ ZSTD_updateFseStateWithDInfo(const char* stream_name, ZSTD_fseState* DStatePtr, 
 {
     size_t const lowBits = BIT_readBits(bitD, nbBits);
     DStatePtr->state = nextState + lowBits;
-    DBG(DBG_SEQUENCES, "%s read %d, got=%.2zu. New state (%.2d+%.2zu)=%zu\n",stream_name,nbBits,lowBits,nextState,lowBits,DStatePtr->state);
+    DBG(DBG_SEQUENCES, "%s read %d, got=%.2zu. New state (nextState %.2d+%.2zu nbBits)=%zu\n",stream_name,nbBits,lowBits,nextState,lowBits,DStatePtr->state);
 }
 
 /* We need to add at most (ZSTD_WINDOWLOG_MAX_32 - 1) bits to read the maximum
@@ -1293,9 +1289,9 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
     const ZSTD_seqSymbol* const ofDInfo = seqState->stateOffb.table + seqState->stateOffb.state;
 #endif
     DBG(DBG_SEQUENCES, ">>>>>>>  Decoding sequence\n");
-    DBG_ZSTD_seqSymbol("LLN", seqState->stateLL.state, llDInfo);
-    DBG_ZSTD_seqSymbol("MLN", seqState->stateML.state, mlDInfo);
-    DBG_ZSTD_seqSymbol("OFF", seqState->stateOffb.state, ofDInfo);
+    DBG_ZSTD_seqSymbol("LL->", seqState->stateLL.state, llDInfo);
+    DBG_ZSTD_seqSymbol("ML->", seqState->stateML.state, mlDInfo);
+    DBG_ZSTD_seqSymbol("OF->", seqState->stateOffb.state, ofDInfo);
 
     seq.matchLength = mlDInfo->baseValue;
     seq.litLength = llDInfo->baseValue;
@@ -1363,7 +1359,6 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
         if (mlBits > 0)
     #endif
             seq.matchLength += BIT_readBitsFast(&seqState->DStream, mlBits/*>0*/);
-
         if (MEM_32bits() && (mlBits+llBits >= STREAM_ACCUMULATOR_MIN_32-LONG_OFFSETS_MAX_EXTRA_BITS_32))
             BIT_reloadDStream(&seqState->DStream);
         if (MEM_64bits() && UNLIKELY(totalBits >= STREAM_ACCUMULATOR_MIN_64-(LLFSELog+MLFSELog+OffFSELog)))
@@ -1377,11 +1372,10 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
         if (llBits > 0)
     #endif
             seq.litLength += BIT_readBitsFast(&seqState->DStream, llBits/*>0*/);
-
         if (MEM_32bits())
             BIT_reloadDStream(&seqState->DStream);
 
-        DBGN(DBG_SEQUENCES, "seq: litL=%u, matchL=%u, offset=%u", (U32)seq.litLength, (U32)seq.matchLength, (U32)seq.offset);
+        DBGN(DBG_SEQUENCES, "seq (baseValue+read nbAdditionalBits): litL=%u, matchL=%u, offset=%u", (U32)seq.litLength, (U32)seq.matchLength, (U32)seq.offset);
 
         ZSTD_updateFseStateWithDInfo("LLN",&seqState->stateLL, &seqState->DStream, llNext, llnbBits);    /* <=  9 bits */
         ZSTD_updateFseStateWithDInfo("MLN",&seqState->stateML, &seqState->DStream, mlNext, mlnbBits);    /* <=  9 bits */
@@ -1461,7 +1455,7 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
     const BYTE* const vBase = (const BYTE*) (dctx->virtualStart);
     const BYTE* const dictEnd = (const BYTE*) (dctx->dictEnd);
     (void)frame;
-    DBG(DBG_GEN || DBG_SEQUENCES, "!!!!!!!!!!! ZSTD_decompressSequences_bodySplitLitBuffer!!!!!!!!!!\n");
+    DBG(DBG_GEN || DBG_SEQUENCES, "%s\n", __FUNCTION__);
     /* Regen sequences */
     if (nbSeq) {
         seqState_t seqState;
@@ -1471,9 +1465,9 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
         RETURN_ERROR_IF(
             ERR_isError(BIT_initDStream(&seqState.DStream, ip, iend-ip)),
             corruption_detected, "");
-        ZSTD_initFseState(&seqState.stateLL, &seqState.DStream, dctx->LLTptr);
-        ZSTD_initFseState(&seqState.stateOffb, &seqState.DStream, dctx->OFTptr);
-        ZSTD_initFseState(&seqState.stateML, &seqState.DStream, dctx->MLTptr);
+        ZSTD_initFseState("LL",&seqState.stateLL, &seqState.DStream, dctx->LLTptr);
+        ZSTD_initFseState("OF",&seqState.stateOffb, &seqState.DStream, dctx->OFTptr);
+        ZSTD_initFseState("ML",&seqState.stateML, &seqState.DStream, dctx->MLTptr);
         assert(dst != NULL);
 
         ZSTD_STATIC_ASSERT(
@@ -1679,7 +1673,7 @@ ZSTD_decompressSequences_body(ZSTD_DCtx* dctx,
     const BYTE* const dictEnd = (const BYTE*)(dctx->dictEnd);
     DEBUGLOG(5, "ZSTD_decompressSequences_body: nbSeq = %d", nbSeq);
     (void)frame;
-    DBG(DBG_GEN || DBG_SEQUENCES, "!!!!!!!!!!! ZSTD_decompressSequences_body!!!!!!!!!!\n");
+    DBG(DBG_GEN || DBG_SEQUENCES, "ZSTD_decompressSequences_body,  nbSeq = %d\n", nbSeq);
     /* Regen sequences */
     if (nbSeq) {
         seqState_t seqState;
@@ -1688,9 +1682,9 @@ ZSTD_decompressSequences_body(ZSTD_DCtx* dctx,
         RETURN_ERROR_IF(
             ERR_isError(BIT_initDStream(&seqState.DStream, ip, iend - ip)),
             corruption_detected, "");
-        ZSTD_initFseState(&seqState.stateLL, &seqState.DStream, dctx->LLTptr);
-        ZSTD_initFseState(&seqState.stateOffb, &seqState.DStream, dctx->OFTptr);
-        ZSTD_initFseState(&seqState.stateML, &seqState.DStream, dctx->MLTptr);
+        ZSTD_initFseState("LL", &seqState.stateLL, &seqState.DStream, dctx->LLTptr);
+        ZSTD_initFseState("OF", &seqState.stateOffb, &seqState.DStream, dctx->OFTptr);
+        ZSTD_initFseState("ML", &seqState.stateML, &seqState.DStream, dctx->MLTptr);
         assert(dst != NULL);
 
         ZSTD_STATIC_ASSERT(
@@ -2021,8 +2015,7 @@ ZSTD_decompressSequences(ZSTD_DCtx* dctx, void* dst, size_t maxDstSize,
                    const ZSTD_longOffset_e isLongOffset,
                    const int frame)
 {
-    DBGN(DBG_GEN, "!!!!!!!!! ZSTD_decompressSequences !!!!!!!!!");
-    DEBUGLOG(5, "ZSTD_decompressSequences");
+    DBG(DBG_GEN || DBG_SEQUENCES, "%s\n", __FUNCTION__);
 #if DYNAMIC_BMI2
     if (ZSTD_DCtx_get_bmi2(dctx)) {
         return ZSTD_decompressSequences_bmi2(dctx, dst, maxDstSize, seqStart, seqSize, nbSeq, isLongOffset, frame);
@@ -2118,9 +2111,9 @@ ZSTD_decompressBlock_internal(ZSTD_DCtx* dctx,
     RETURN_ERROR_IF(srcSize >= ZSTD_BLOCKSIZE_MAX, srcSize_wrong, "");
 
     /* Decode literals section */
-    {   size_t const litCSize = ZSTD_decodeLiteralsBlock(dctx, src, srcSize, dst, dstCapacity, streaming);
-        DBGN(DBG_GEN, "ZSTD_decodeLiteralsBlock : cSize=%u, nbLiterals=%zu", (U32)litCSize, dctx->litSize);
-        DEBUGLOG(5, "ZSTD_decodeLiteralsBlock : cSize=%u, nbLiterals=%zu", (U32)litCSize, dctx->litSize);
+    {   
+        size_t const litCSize = ZSTD_decodeLiteralsBlock(dctx, src, srcSize, dst, dstCapacity, streaming);
+        DBGN(DBG_GEN, "Decoded literals: parsed size=%u, nbLiterals=%zu", (U32)litCSize, dctx->litSize);
         if (ZSTD_isError(litCSize)) return litCSize;
         ip += litCSize;
         srcSize -= litCSize;
