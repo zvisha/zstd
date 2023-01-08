@@ -149,7 +149,7 @@ static DTableDesc HUF_getDTableDesc(const HUF_DTable* table)
 void DBG_bits(int b_print, U32 number, U32 bits, U32 tableLog) {
     // per bit print 0 or 1
     if (b_print) {
-            DBG(1, "(%x)",number);
+        //DBG(1, "(%x)",number);
         for (int i = tableLog-1, j=0; i >= 0 && j<(int)bits; i--, j++) {
             DBG(1, "%x",((number>>(i)) & 1));
         }
@@ -519,24 +519,29 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
 }
 
 FORCE_INLINE_TEMPLATE BYTE
-HUF_decodeSymbolX1(BIT_DStream_t* Dstream, const HUF_DEltX1* dt, const U32 dtLog)
+HUF_decodeSymbolX1(const char* stream_name, BIT_DStream_t* Dstream, const HUF_DEltX1* dt, const U32 dtLog)
 {
     size_t const val = BIT_lookBitsFast(Dstream, dtLog); /* note : dtLog >= 1 */
     BYTE const c = dt[val].byte;
     BIT_skipBits(Dstream, dt[val].nbBits);
+    DBG(DBG_HUFF_DATA, "%s:", stream_name);
+    DBG_bits(DBG_HUFF_DATA, val, dt[val].nbBits, dtLog);
+    DBG(DBG_HUFF_DATA, "->\'%c\'(0x%2x)  ",((c < 0x20) || (c > 0x7e))?'.':c,c);
+//    DBG(DBG_HUFF_DATA, "\n");
+
     return c;
 }
 
-#define HUF_DECODE_SYMBOLX1_0(ptr, DStreamPtr) \
-    *ptr++ = HUF_decodeSymbolX1(DStreamPtr, dt, dtLog)
+#define HUF_DECODE_SYMBOLX1_0(STREAM_NAME, ptr, DStreamPtr) \
+    *ptr++ = HUF_decodeSymbolX1(STREAM_NAME, DStreamPtr, dt, dtLog)
 
-#define HUF_DECODE_SYMBOLX1_1(ptr, DStreamPtr)  \
+#define HUF_DECODE_SYMBOLX1_1(STREAM_NAME, ptr, DStreamPtr)  \
     if (MEM_64bits() || (HUF_TABLELOG_MAX<=12)) \
-        HUF_DECODE_SYMBOLX1_0(ptr, DStreamPtr)
+        HUF_DECODE_SYMBOLX1_0(STREAM_NAME, ptr, DStreamPtr)
 
-#define HUF_DECODE_SYMBOLX1_2(ptr, DStreamPtr) \
+#define HUF_DECODE_SYMBOLX1_2(STREAM_NAME, ptr, DStreamPtr) \
     if (MEM_64bits()) \
-        HUF_DECODE_SYMBOLX1_0(ptr, DStreamPtr)
+        HUF_DECODE_SYMBOLX1_0(STREAM_NAME, ptr, DStreamPtr)
 
 HINT_INLINE size_t
 HUF_decodeStreamX1(const char* stream_name, BYTE* p, BIT_DStream_t* const bitDPtr, BYTE* const pEnd, const HUF_DEltX1* const dt, const U32 dtLog)
@@ -547,10 +552,10 @@ HUF_decodeStreamX1(const char* stream_name, BYTE* p, BIT_DStream_t* const bitDPt
     /* up to 4 symbols at a time */
     if ((pEnd - p) > 3) {
         while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) & (p < pEnd-3)) {
-            HUF_DECODE_SYMBOLX1_2(p, bitDPtr);
-            HUF_DECODE_SYMBOLX1_1(p, bitDPtr);
-            HUF_DECODE_SYMBOLX1_2(p, bitDPtr);
-            HUF_DECODE_SYMBOLX1_0(p, bitDPtr);
+            HUF_DECODE_SYMBOLX1_2("sX", p, bitDPtr);
+            HUF_DECODE_SYMBOLX1_1("sX", p, bitDPtr);
+            HUF_DECODE_SYMBOLX1_2("sX", p, bitDPtr);
+            HUF_DECODE_SYMBOLX1_0("sX", p, bitDPtr);
         }
     } else {
         BIT_reloadDStream(bitDPtr);
@@ -559,11 +564,11 @@ HUF_decodeStreamX1(const char* stream_name, BYTE* p, BIT_DStream_t* const bitDPt
     /* [0-3] symbols remaining */
     if (MEM_32bits())
         while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) & (p < pEnd))
-            HUF_DECODE_SYMBOLX1_0(p, bitDPtr);
+            HUF_DECODE_SYMBOLX1_0("sX",p, bitDPtr);
 
     /* no more data to retrieve from bitstream, no need to reload */
     while (p < pEnd)
-        HUF_DECODE_SYMBOLX1_0(p, bitDPtr);
+        HUF_DECODE_SYMBOLX1_0("sX",p, bitDPtr);
 
     return pEnd-pStart;
 }
@@ -651,22 +656,22 @@ HUF_decompress4X1_usingDTable_internal_body(
         /* up to 16 symbols per loop (4 symbols per stream) in 64-bit mode */
         if ((size_t)(oend - op4) >= sizeof(size_t)) {
             for ( ; (endSignal) & (op4 < olimit) ; ) {
-                HUF_DECODE_SYMBOLX1_2(op1, &bitD1);
-                HUF_DECODE_SYMBOLX1_2(op2, &bitD2);
-                HUF_DECODE_SYMBOLX1_2(op3, &bitD3);
-                HUF_DECODE_SYMBOLX1_2(op4, &bitD4);
-                HUF_DECODE_SYMBOLX1_1(op1, &bitD1);
-                HUF_DECODE_SYMBOLX1_1(op2, &bitD2);
-                HUF_DECODE_SYMBOLX1_1(op3, &bitD3);
-                HUF_DECODE_SYMBOLX1_1(op4, &bitD4);
-                HUF_DECODE_SYMBOLX1_2(op1, &bitD1);
-                HUF_DECODE_SYMBOLX1_2(op2, &bitD2);
-                HUF_DECODE_SYMBOLX1_2(op3, &bitD3);
-                HUF_DECODE_SYMBOLX1_2(op4, &bitD4);
-                HUF_DECODE_SYMBOLX1_0(op1, &bitD1);
-                HUF_DECODE_SYMBOLX1_0(op2, &bitD2);
-                HUF_DECODE_SYMBOLX1_0(op3, &bitD3);
-                HUF_DECODE_SYMBOLX1_0(op4, &bitD4);
+                HUF_DECODE_SYMBOLX1_2("S1", op1, &bitD1);
+                HUF_DECODE_SYMBOLX1_2("S2", op2, &bitD2);
+                HUF_DECODE_SYMBOLX1_2("S3", op3, &bitD3);
+                HUF_DECODE_SYMBOLX1_2("S4", op4, &bitD4);
+                HUF_DECODE_SYMBOLX1_1("S1", op1, &bitD1);
+                HUF_DECODE_SYMBOLX1_1("S2", op2, &bitD2);
+                HUF_DECODE_SYMBOLX1_1("S3", op3, &bitD3);
+                HUF_DECODE_SYMBOLX1_1("S4", op4, &bitD4);
+                HUF_DECODE_SYMBOLX1_2("S1", op1, &bitD1);
+                HUF_DECODE_SYMBOLX1_2("S2", op2, &bitD2);
+                HUF_DECODE_SYMBOLX1_2("S3", op3, &bitD3);
+                HUF_DECODE_SYMBOLX1_2("S4", op4, &bitD4);
+                HUF_DECODE_SYMBOLX1_0("S1", op1, &bitD1);
+                HUF_DECODE_SYMBOLX1_0("S2", op2, &bitD2);
+                HUF_DECODE_SYMBOLX1_0("S3", op3, &bitD3);
+                HUF_DECODE_SYMBOLX1_0("S4", op4, &bitD4);
                 endSignal &= BIT_reloadDStreamFast(&bitD1) == BIT_DStream_unfinished;
                 endSignal &= BIT_reloadDStreamFast(&bitD2) == BIT_DStream_unfinished;
                 endSignal &= BIT_reloadDStreamFast(&bitD3) == BIT_DStream_unfinished;
@@ -683,10 +688,10 @@ HUF_decompress4X1_usingDTable_internal_body(
         /* note : op4 supposed already verified within main loop */
 
         /* finish bitStreams one by one */
-        HUF_decodeStreamX1("s111", op1, &bitD1, opStart2, dt, dtLog);
-        HUF_decodeStreamX1("s112", op2, &bitD2, opStart3, dt, dtLog);
-        HUF_decodeStreamX1("s113", op3, &bitD3, opStart4, dt, dtLog);
-        HUF_decodeStreamX1("s114", op4, &bitD4, oend,     dt, dtLog);
+        HUF_decodeStreamX1("D1", op1, &bitD1, opStart2, dt, dtLog);
+        HUF_decodeStreamX1("D2", op2, &bitD2, opStart3, dt, dtLog);
+        HUF_decodeStreamX1("D3", op3, &bitD3, opStart4, dt, dtLog);
+        HUF_decodeStreamX1("D4", op4, &bitD4, oend,     dt, dtLog);
 
         /* check */
         { U32 const endCheck = BIT_endOfDStream(&bitD1) & BIT_endOfDStream(&bitD2) & BIT_endOfDStream(&bitD3) & BIT_endOfDStream(&bitD4);

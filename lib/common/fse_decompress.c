@@ -75,7 +75,7 @@ static size_t FSE_buildDTable_internal(FSE_DTable* dt, const short* normalizedCo
     FSE_DECODE_TYPE* const tableDecode = (FSE_DECODE_TYPE*) (tdPtr);
     U16* symbolNext = (U16*)workSpace;
     BYTE* spread = (BYTE*)(symbolNext + maxSymbolValue + 1);
-    DBG(DBG_HUFF_FSE, "%s, tableLog=%d\n", __FUNCTION__, tableLog);
+    DBG(DBG_HUFF_TBL_FSE, "%s, tableLog=%d\n", __FUNCTION__, tableLog);
     U32 const maxSV1 = maxSymbolValue + 1;
     U32 const tableSize = 1 << tableLog;
     U32 highThreshold = tableSize-1;
@@ -163,7 +163,7 @@ static size_t FSE_buildDTable_internal(FSE_DTable* dt, const short* normalizedCo
     }
 
     /* Build Decoding table */
-    DBG(DBG_HUFF_FSE, "<%s:[state] newState, nbBits, symbol>\n", "FSE tbl for HUFF tbl for LITTERALS");
+    DBG(DBG_HUFF_TBL_FSE, "<%s:[state] newState, nbBits, symbol>\n", "FSE tbl for HUFF tbl for LITTERALS");
     {   U32 u;
         for (u=0; u<tableSize; u++) {
             FSE_FUNCTION_TYPE const symbol = (FSE_FUNCTION_TYPE)(tableDecode[u].symbol);
@@ -171,14 +171,14 @@ static size_t FSE_buildDTable_internal(FSE_DTable* dt, const short* normalizedCo
             tableDecode[u].nbBits = (BYTE) (tableLog - ZSTD_highbit32(nextState) );
             tableDecode[u].newState = (U16) ( (nextState << tableDecode[u].nbBits) - tableSize);
             
-            DBG(DBG_HUFF_FSE, "<[%03d] %03d %d %02d>   ", 
+            DBG(DBG_HUFF_TBL_FSE, "<[%03d] %03d %d %02d>   ", 
                                                     u, 
                                                     tableDecode[u].newState,
                                                     tableDecode[u].nbBits,
                                                     tableDecode[u].symbol);
             
             if (u%4==3) {
-                DBG(DBG_HUFF_FSE, "\n");
+                DBG(DBG_HUFF_TBL_FSE, "\n");
             }
     }   }
 
@@ -335,7 +335,7 @@ FORCE_INLINE_TEMPLATE size_t FSE_decompress_wksp_body(
         unsigned maxLog, void* workSpace, size_t wkspSize,
         int bmi2)
 {
-    DBG(DBG_HUFF_FSE, "%s - decompress fuffman table for literals, size=%zu, dstCapacity=%zu\n", __FUNCTION__, cSrcSize, dstCapacity);
+    DBG(DBG_HUFF_TBL_FSE, "%s - decompress huffman table for literals, size=%zu, dstCapacity=%zu\n", __FUNCTION__, cSrcSize, dstCapacity);
     const BYTE* const istart = (const BYTE*)cSrc;
     const BYTE* ip = istart;
     unsigned tableLog;
@@ -348,7 +348,7 @@ FORCE_INLINE_TEMPLATE size_t FSE_decompress_wksp_body(
     /* normal FSE decoding mode */
     {
         size_t const NCountLength = FSE_readNCount_bmi2(wksp->ncount, &maxSymbolValue, &tableLog, istart, cSrcSize, bmi2);
-        DBG(DBG_HUFF_FSE, "wksp->ncount max=%u, maxSymbolValue=%u, tableLog=%d, istart=%p, cSrcSize=%zu\n", FSE_MAX_SYMBOL_VALUE, maxSymbolValue, tableLog, istart, cSrcSize);
+        DBG(DBG_HUFF_TBL_FSE, "wksp->ncount max=%u, maxSymbolValue=%u, tableLog=%d, istart=%p, cSrcSize=%zu\n", FSE_MAX_SYMBOL_VALUE, maxSymbolValue, tableLog, istart, cSrcSize);
         if (FSE_isError(NCountLength)) return NCountLength;
         if (tableLog > maxLog) return ERROR(tableLog_tooLarge);
         assert(NCountLength <= cSrcSize);

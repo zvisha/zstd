@@ -55,7 +55,7 @@
 **********************************************************/
 
 void DBG_ZSTD_seqSymbol(const char* name, int state,const ZSTD_seqSymbol* s) {
-    DBG(DBG_SEQUENCES, "%s current state:%3d, nextState:%3d, nbAdditionalBits:%2d, nbBits:%d, baseValue:%3d\n",name, state, s->nextState, s->nbAdditionalBits, s->nbBits, s->baseValue);
+    DBG(DBG_SEQUENCES, "%s state[%3d]:nextState:%3d, nbAddBits:%2d, nbBits:%d, baseValue:%3d\n",name, state, s->nextState, s->nbAdditionalBits, s->nbBits, s->baseValue);
 }
 
 void DBG_BIT_DStream_t(const char* name, BIT_DStream_t *s) {
@@ -1070,9 +1070,10 @@ size_t ZSTD_execSequence(BYTE* op,
     if (UNLIKELY(
         iLitEnd > litLimit ||
         oMatchEnd > oend_w ||
-        (MEM_32bits() && (size_t)(oend - op) < sequenceLength + WILDCOPY_OVERLENGTH)))
+        (MEM_32bits() && (size_t)(oend - op) < sequenceLength + WILDCOPY_OVERLENGTH))) {
+        DBG(DBG_SEQUENCES_DATA, "SEQ LITERAL: UNLIKELY final literal copy literal data\n");
         return ZSTD_execSequenceEnd(op, oend, sequence, litPtr, litLimit, prefixStart, virtualStart, dictEnd);
-
+    }
     /* Assumptions (everything else goes into ZSTD_execSequenceEnd()) */
     assert(op <= oLitEnd /* No overflow */);
     assert(oLitEnd < oMatchEnd /* Non-zero match & no overflow */);
@@ -1100,7 +1101,7 @@ size_t ZSTD_execSequence(BYTE* op,
         match = dictEnd + (match - prefixStart);
         if (match + sequence.matchLength <= dictEnd) {
             ZSTD_memmove(oLitEnd, match, sequence.matchLength);
-            return sequenceLength;
+            goto ret;
         }
         /* span extDict & currentPrefixSegment */
         {   size_t const length1 = dictEnd - match;
@@ -1116,6 +1117,7 @@ size_t ZSTD_execSequence(BYTE* op,
     assert(match >= prefixStart);
     assert(sequence.matchLength >= 1);
 
+    
     /* Nearly all offsets are >= WILDCOPY_VECLEN bytes, which means we can use wildcopy
      * without overlap checking.
      */
@@ -1125,7 +1127,7 @@ size_t ZSTD_execSequence(BYTE* op,
          * than 16 bytes.
          */
         ZSTD_wildcopy(op, match, (ptrdiff_t)sequence.matchLength, ZSTD_no_overlap);
-        return sequenceLength;
+        goto ret;
     }
     assert(sequence.offset < WILDCOPY_VECLEN);
 
@@ -1137,6 +1139,11 @@ size_t ZSTD_execSequence(BYTE* op,
         assert(op < oMatchEnd);
         ZSTD_wildcopy(op, match, (ptrdiff_t)sequence.matchLength - 8, ZSTD_overlap_src_before_dst);
     }
+
+
+ret:    
+    DBG(DBG_SEQUENCES_DATA, "SEQ LITERAL: Copy literal data %zu bytes\n", sequenceLength);
+    DBGMEM(DBG_SEQUENCES_DATA, "Copied data:", op - sequenceLength, sequenceLength);
     return sequenceLength;
 }
 
@@ -1248,7 +1255,7 @@ ZSTD_updateFseStateWithDInfo(const char* stream_name, ZSTD_fseState* DStatePtr, 
 {
     size_t const lowBits = BIT_readBits(bitD, nbBits);
     DStatePtr->state = nextState + lowBits;
-    DBG(DBG_SEQUENCES, "%s read %d, got=%.2zu. New state (nextState %.2d+%.2zu nbBits)=%zu\n",stream_name,nbBits,lowBits,nextState,lowBits,DStatePtr->state);
+    DBG(DBG_SEQUENCES, "%s read %d bits, got=%.2zu. New nextState (%.2d+%.2zu)=%zu\n",stream_name,nbBits,lowBits,nextState,lowBits,DStatePtr->state);
 }
 
 /* We need to add at most (ZSTD_WINDOWLOG_MAX_32 - 1) bits to read the maximum
@@ -1315,22 +1322,21 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
 
         /* sequence */
         {   size_t offset;
-    #if defined(__clang__)
-            if (LIKELY(ofBits > 1)) {
-    #else
             if (ofBits > 1) {
-    #endif
                 ZSTD_STATIC_ASSERT(ZSTD_lo_isLongOffset == 1);
                 ZSTD_STATIC_ASSERT(LONG_OFFSETS_MAX_EXTRA_BITS_32 == 5);
                 assert(ofBits <= MaxOff);
                 if (MEM_32bits() && longOffsets && (ofBits >= STREAM_ACCUMULATOR_MIN_32)) {
                     U32 const extraBits = ofBits - MIN(ofBits, 32 - seqState->DStream.bitsConsumed);
                     offset = ofBase + (BIT_readBitsFast(&seqState->DStream, ofBits - extraBits) << extraBits);
+                    DBG(DBG_SEQUENCES, "ML additional %d bits read\n",ofBits - extraBits);
                     BIT_reloadDStream(&seqState->DStream);
                     if (extraBits) offset += BIT_readBitsFast(&seqState->DStream, extraBits);
+                    DBG(DBG_SEQUENCES, "ML additional extra %d bits read\n",extraBits);
                     assert(extraBits <= LONG_OFFSETS_MAX_EXTRA_BITS_32);   /* to avoid another reload */
                 } else {
                     offset = ofBase + BIT_readBitsFast(&seqState->DStream, ofBits/*>0*/);   /* <=  (ZSTD_WINDOWLOG_MAX-1) bits */
+                    DBG(DBG_SEQUENCES, "ML additional %d bits read\n",ofBits);
                     if (MEM_32bits()) BIT_reloadDStream(&seqState->DStream);
                 }
                 seqState->prevOffset[2] = seqState->prevOffset[1];
@@ -1353,12 +1359,11 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
             seq.offset = offset;
         }
 
-    #if defined(__clang__)
-        if (UNLIKELY(mlBits > 0))
-    #else
-        if (mlBits > 0)
-    #endif
+        if (mlBits > 0) {
             seq.matchLength += BIT_readBitsFast(&seqState->DStream, mlBits/*>0*/);
+            DBGN(DBG_SEQUENCES, "ML additional %d bits read\n",llBits);
+        }
+
         if (MEM_32bits() && (mlBits+llBits >= STREAM_ACCUMULATOR_MIN_32-LONG_OFFSETS_MAX_EXTRA_BITS_32))
             BIT_reloadDStream(&seqState->DStream);
         if (MEM_64bits() && UNLIKELY(totalBits >= STREAM_ACCUMULATOR_MIN_64-(LLFSELog+MLFSELog+OffFSELog)))
@@ -1366,12 +1371,11 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets)
         /* Ensure there are enough bits to read the rest of data in 64-bit mode. */
         ZSTD_STATIC_ASSERT(16+LLFSELog+MLFSELog+OffFSELog < STREAM_ACCUMULATOR_MIN_64);
 
-    #if defined(__clang__)
-        if (UNLIKELY(llBits > 0))
-    #else
-        if (llBits > 0)
-    #endif
+    
+        if (llBits > 0) {
             seq.litLength += BIT_readBitsFast(&seqState->DStream, llBits/*>0*/);
+            DBGN(DBG_SEQUENCES, "LL additional %d bits read\n",llBits);
+        }
         if (MEM_32bits())
             BIT_reloadDStream(&seqState->DStream);
 

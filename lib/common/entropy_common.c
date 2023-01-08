@@ -54,7 +54,9 @@ size_t FSE_readNCount_body(short* normalizedCounter, unsigned* maxSVPtr, unsigne
     unsigned charnum = 0;
     unsigned const maxSV1 = *maxSVPtr + 1;
     int previous0 = 0;
-    DBG(DBG_SEQ_FSE || DBG_HUFF_FSE, "%s - decompress Huffman table for literals\n", __FUNCTION__);
+    DBG(DBG_SEQ_FSE || DBG_HUFF_TBL_FSE, "HUFF FSE: Decompress Huffman table for literals, size left=%zu\n", hbSize);
+    //DBGMEM(DBG_HUFF_TBL_FSE, "HUFF FSE headerBuffer", headerBuffer, hbSize);
+
     if (hbSize < 8) {
         /* This function only works when hbSize >= 8 */
         char buffer[8] = {0};
@@ -78,7 +80,7 @@ size_t FSE_readNCount_body(short* normalizedCounter, unsigned* maxSVPtr, unsigne
     remaining = (1<<nbBits)+1;
     threshold = 1<<nbBits;
     nbBits++;
-
+    DBG(DBG_HUFF_TBL_FSE, "Read 4 bits tablelog, tablelog=%d\n", nbBits);
     for (;;) {
         if (previous0) {
             /* Count the number of repeats. Each time the
@@ -102,7 +104,6 @@ size_t FSE_readNCount_body(short* normalizedCounter, unsigned* maxSVPtr, unsigne
             charnum += 3 * repeats;
             bitStream >>= 2 * repeats;
             bitCount += 2 * repeats;
-
             /* Add the final repeat which isn't 0b11. */
             assert((bitStream & 3) < 3);
             charnum += bitStream & 3;

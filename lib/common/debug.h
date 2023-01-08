@@ -60,10 +60,13 @@ void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 #define DBG_HEADERS_PARSING   1
 #define DBG_LITERALS          1
 #define DBG_HUFF              1
-#define DBG_HUFF_FSE          1
+#define DBG_HUFF_DATA         1
+#define DBG_HUFF_TBL_FSE      1
+#define DBG_HUFF_TBL_FSE_DATA 1
 #define DBG_SEQ_FSE           1
 #define DBG_FSE_BUILD_TABLE   1
 #define DBG_SEQUENCES         1
+#define DBG_SEQUENCES_DATA    1
 
 #define DBG_ASN 1
 
@@ -71,6 +74,7 @@ void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 //File for literal section.
 //File for sequence section
 //(c) For literal section:
+
 //i. Huffman tree description (if exists), decoded and encoded.
 //ii. Stream information (one or 4 files). Encoded and decoded.
 //(d) For sequence section:
