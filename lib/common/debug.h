@@ -50,25 +50,26 @@ extern "C" {
 #define DEBUGLEVEL 0
 
 #include <stdio.h>
+
+#define DBG_ENABLE 1
+
 void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 #define DBG(X,...) do {if (X) fprintf(stderr, __VA_ARGS__);} while(0)
 #define DBGN(X,...) if (X) {DBG(X, __VA_ARGS__); DBG(X, "\n");}
 
-#define DBG_GEN 1
-#define DBG_EXTRA 1
-
-#define DBG_HEADERS_PARSING   1
-#define DBG_LITERALS          1
-#define DBG_HUFF              1
-#define DBG_HUFF_DATA         1
-#define DBG_HUFF_TBL_FSE      1
-#define DBG_HUFF_TBL_FSE_DATA 1
-#define DBG_SEQ_FSE           1
-#define DBG_FSE_BUILD_TABLE   1
-#define DBG_SEQUENCES         1
-#define DBG_SEQUENCES_DATA    1
-
-#define DBG_ASN 1
+#define DBG_GEN               (1 && DBG_ENABLE)
+#define DBG_EXTRA             (1 && DBG_ENABLE)
+#define DBG_HEADERS_PARSING   (1 && DBG_ENABLE)
+#define DBG_LITERALS          (1 && DBG_ENABLE)
+#define DBG_HUFF              (1 && DBG_ENABLE)
+#define DBG_HUFF_DATA         (1 && DBG_ENABLE)
+#define DBG_HUFF_TBL_FSE      (1 && DBG_ENABLE)
+#define DBG_HUFF_TBL_FSE_DATA (1 && DBG_ENABLE)
+#define DBG_SEQ_FSE           (1 && DBG_ENABLE)
+#define DBG_FSE_BUILD_TABLE   (1 && DBG_ENABLE)
+#define DBG_SEQUENCES         (1 && DBG_ENABLE)
+#define DBG_SEQUENCES_DATA    (1 && DBG_ENABLE)
+#define DBG_ASN               (1 && DBG_ENABLE)
 
 // SOW
 //File for literal section.
