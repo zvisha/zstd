@@ -403,6 +403,63 @@ static void execute_match_copy(frame_context_t *const ctx, size_t offset,
 
 /******* END ZSTD HELPER STRUCTS AND PROTOTYPES *******************************/
 
+void DBGMEM(int b_print,char *desc, const void *addr, unsigned int len)
+{
+    unsigned int i;
+    char buff[17];
+    unsigned const char *pc = (const unsigned char*)addr;
+
+    if (!b_print) {
+        return;
+    }
+
+    // Output description if given.
+    if (desc != NULL)
+        DBG(1, "%s:\n",desc);
+
+    // Process every byte in the data.
+    for (i = 0; i < len; i++) {
+        // Multiple of 16 means new line (with line offset).
+
+        if ((i % 16) == 0) {
+            // Just don't print ASCII for the zeroth line.
+            if (i != 0) {
+				DBG(1, "   %s\n", buff);
+			}
+        } else {
+	    if ((i % 4) == 0) {
+	    	DBG(1, "  ");
+	    }
+	}
+
+    // Now the hex code for the specific character.
+    DBG(1, " %02x", (unsigned int)pc[i]);
+
+    // And store a printable ASCII character for later.
+    if ((pc[i] < 0x20) || (pc[i] > 0x7e)) {
+            buff[i % 16] = '.';
+        } else {
+            buff[i % 16] = pc[i];
+        }
+
+        buff[(i % 16) + 1] = '\0';
+    }
+
+    // Pad out last line if not exactly 16 characters.
+    while ((i % 16) != 0) {
+        DBG(1, "   ");
+	    if ((i % 4) == 0) {
+		   DBG(1, " ");
+		}
+        i++;
+    }
+
+    // And print the final ASCII bit.
+    DBG(1, "  ");
+	DBG(1, "%s", buff);
+    DBG(1, "\n");
+}
+
 
 
 void DBG_bits(int b_print, u32 number, u32 bits, u32 tableLog) {
@@ -1954,6 +2011,8 @@ static void HUF_init_dtable(HUF_dtable *const table, const u8 *const bits,
     table->symbols = malloc(table_size);
     table->num_bits = malloc(table_size);
 
+
+
     if (!table->symbols || !table->num_bits) {
         free(table->symbols);
         free(table->num_bits);
@@ -1987,6 +2046,9 @@ static void HUF_init_dtable(HUF_dtable *const table, const u8 *const bits,
             // the lower bits
             const u16 len = 1 << (max_bits - bits[i]);
             memset(&table->symbols[code], i, len);
+            DBG(DBG_HUFF, "HUFF_TBL[0x%x(\"%c\")]=", table->symbols[code],((table->symbols[code] < 0x20) || (table->symbols[code] > 0x7e))?'.':table->symbols[code]);
+            DBG_bits(DBG_HUFF, code, bits[i], max_bits);
+            DBG(DBG_HUFF, "\n");
             rank_idx[bits[i]] += len;
         }
     }

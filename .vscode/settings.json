@@ -1,7 +1,8 @@
 {
     "files.associations": {
         "zstd_deps.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "system_error": "c"
     },
     "makefile.launchConfigurations": [
         {
