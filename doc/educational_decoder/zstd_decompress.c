@@ -54,8 +54,6 @@ void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 #define DBG_SEQUENCES_DATA    (1 && DBG_ENABLE)
 #define DBG_ASN               (1 && DBG_ENABLE)
 
-
-
 /******* UTILITY MACROS AND TYPES *********************************************/
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -404,6 +402,19 @@ static void execute_match_copy(frame_context_t *const ctx, size_t offset,
                               ostream_t *const out);
 
 /******* END ZSTD HELPER STRUCTS AND PROTOTYPES *******************************/
+
+
+
+void DBG_bits(int b_print, u32 number, u32 bits, u32 tableLog) {
+    // per bit print 0 or 1
+    if (b_print) {
+        //DBG(1, "(%x)",number);
+        for (int i = tableLog-1, j=0; i >= 0 && j<(int)bits; i--, j++) {
+            DBG(1, "%x",((number>>(i)) & 1));
+        }
+    }
+}
+
 
 size_t ZSTD_decompress(void *const dst, const size_t dst_len,
                        const void *const src, const size_t src_len) {
