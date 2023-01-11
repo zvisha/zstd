@@ -36,18 +36,22 @@
 
 #define DBG_ENABLE 1
 
-void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
-#define DBG(X,...) do {if (X) fprintf(stderr, __VA_ARGS__);} while(0)
+void DBGMEM(int b_print, const char *desc, const void *addr, unsigned int len);
+#define DBG(X,...) do {if (X) printf(__VA_ARGS__);} while(0)
 #define DBGN(X,...) if (X) {DBG(X, __VA_ARGS__); DBG(X, "\n");}
 
-#define DBG_GEN               (1 && DBG_ENABLE)
+#define DBG_PARSING           (1 && DBG_ENABLE)
+#define DBG_BLOCK_DATA        (1 && DBG_ENABLE)
 #define DBG_EXTRA             (1 && DBG_ENABLE)
-#define DBG_HEADERS_PARSING   (1 && DBG_ENABLE)
 #define DBG_LITERALS          (1 && DBG_ENABLE)
+#define DBG_LZ77              (1 && DBG_ENABLE)
+#define DBG_LZ77_DATA         (1 && DBG_ENABLE)
+#define DBG_LITERALS_DATA     (1 && DBG_ENABLE)
 #define DBG_HUFF              (1 && DBG_ENABLE)
 #define DBG_HUFF_DATA         (1 && DBG_ENABLE)
 #define DBG_HUFF_TBL_FSE      (1 && DBG_ENABLE)
 #define DBG_HUFF_TBL_FSE_DATA (1 && DBG_ENABLE)
+#define DBG_FSE               (1 && DBG_ENABLE)
 #define DBG_SEQ_FSE           (1 && DBG_ENABLE)
 #define DBG_FSE_BUILD_TABLE   (1 && DBG_ENABLE)
 #define DBG_SEQUENCES         (1 && DBG_ENABLE)
@@ -78,6 +82,8 @@ void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
 #define CORRUPTION() ERROR("Corruption detected while decompressing")
 #define BAD_ALLOC() ERROR("Memory allocation error")
 #define IMPOSSIBLE() ERROR("An impossibility has occurred")
+
+#define CHAR_SAFE(C) (((C < 0x20) || (C > 0x7e))?'.':C)
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -116,6 +122,7 @@ typedef struct {
 
 /// The following two functions are the only ones that allow the istream to be
 /// non-byte aligned
+
 
 /// Reads `num` bits from a bitstream, and updates the internal offset
 static inline u64 IO_read_bits(istream_t *const in, const int num_bits);
@@ -262,13 +269,14 @@ static size_t FSE_decompress_interleaved2(const FSE_dtable *const dtable,
                                           istream_t *const in);
 
 /// Initialize a decoding table using normalized frequencies.
-static void FSE_init_dtable(FSE_dtable *const dtable,
+static void FSE_init_dtable(const char* table_name, 
+                            FSE_dtable *const dtable,
                             const i16 *const norm_freqs, const int num_symbs,
                             const int accuracy_log);
 
 /// Decode an FSE header as defined in the Zstandard format specification and
 /// use the decoded frequencies to initialize a decoding table.
-static void FSE_decode_header(FSE_dtable *const dtable, istream_t *const in,
+static void FSE_decode_header(const char* table_name, FSE_dtable *const dtable, istream_t *const in,
                                 const int max_accuracy_log);
 
 /// Initialize an FSE table that will always return the same symbol and consume
@@ -403,13 +411,44 @@ static void execute_match_copy(frame_context_t *const ctx, size_t offset,
 
 /******* END ZSTD HELPER STRUCTS AND PROTOTYPES *******************************/
 
-void DBGMEM(int b_print,char *desc, const void *addr, unsigned int len)
+
+
+
+
+
+/*                                                        
+                                                        
+ZZZZZZZZZZZZZZZZZZZVVVVVVVV           VVVVVVVVIIIIIIIIII
+Z:::::::::::::::::ZV::::::V           V::::::VI::::::::I
+Z:::::::::::::::::ZV::::::V           V::::::VI::::::::I
+Z:::ZZZZZZZZ:::::Z V::::::V           V::::::VII::::::II
+ZZZZZ     Z:::::Z   V:::::V           V:::::V   I::::I  
+        Z:::::Z      V:::::V         V:::::V    I::::I  
+       Z:::::Z        V:::::V       V:::::V     I::::I  
+      Z:::::Z          V:::::V     V:::::V      I::::I  
+     Z:::::Z            V:::::V   V:::::V       I::::I  
+    Z:::::Z              V:::::V V:::::V        I::::I  
+   Z:::::Z                V:::::V:::::V         I::::I  
+ZZZ:::::Z     ZZZZZ        V:::::::::V          I::::I  
+Z::::::ZZZZZZZZ:::Z         V:::::::V         II::::::II
+Z:::::::::::::::::Z          V:::::V          I::::::::I
+Z:::::::::::::::::Z           V:::V           I::::::::I
+ZZZZZZZZZZZZZZZZZZZ            VVV            IIIIIIIIII
+                                                
+*/
+
+
+
+
+
+/******* ZVI`s FUNCTIONS *******************************/
+void DBGMEM(int b_print,const char *desc, const void *addr, unsigned int len)
 {
     unsigned int i;
     char buff[17];
     unsigned const char *pc = (const unsigned char*)addr;
 
-    if (!b_print) {
+    if (!b_print || (len==0)) {
         return;
     }
 
@@ -472,10 +511,14 @@ void DBG_bits(int b_print, u32 number, u32 bits, u32 tableLog) {
     }
 }
 
-
 size_t ZSTD_decompress(void *const dst, const size_t dst_len,
                        const void *const src, const size_t src_len) {
     dictionary_t* const uninit_dict = create_dictionary();
+    DBG(DBG_PARSING, "***************************************************\n");
+    DBG(DBG_PARSING, "***************************************************\n");
+    DBG(DBG_PARSING, "Decompress frame src=%p(%zu bytes), dst=%p(%zu bytes)\n",src,src_len,dst,dst_len);
+    DBG(DBG_PARSING, "***************************************************\n");
+    DBG(DBG_PARSING, "***************************************************\n");
     size_t const decomp_size = ZSTD_decompress_with_dict(dst, dst_len, src,
                                                          src_len, uninit_dict);
     free_dictionary(uninit_dict);
@@ -499,6 +542,51 @@ size_t ZSTD_decompress_with_dict(void *const dst, const size_t dst_len,
 
     return (size_t)(out.ptr - (u8 *)dst);
 }
+/******* END ZVI`s FUNCTIONS *******************************/
+
+
+
+
+
+
+
+
+
+
+/*                                                        
+                                                                                                                                   
+                                                                                                                                
+FFFFFFFFFFFFFFFFFFFFFFRRRRRRRRRRRRRRRRR                  AAA               MMMMMMMM               MMMMMMMMEEEEEEEEEEEEEEEEEEEEEE
+F::::::::::::::::::::FR::::::::::::::::R                A:::A              M:::::::M             M:::::::ME::::::::::::::::::::E
+F::::::::::::::::::::FR::::::RRRRRR:::::R              A:::::A             M::::::::M           M::::::::ME::::::::::::::::::::E
+FF::::::FFFFFFFFF::::FRR:::::R     R:::::R            A:::::::A            M:::::::::M         M:::::::::MEE::::::EEEEEEEEE::::E
+  F:::::F       FFFFFF  R::::R     R:::::R           A:::::::::A           M::::::::::M       M::::::::::M  E:::::E       EEEEEE
+  F:::::F               R::::R     R:::::R          A:::::A:::::A          M:::::::::::M     M:::::::::::M  E:::::E             
+  F::::::FFFFFFFFFF     R::::RRRRRR:::::R          A:::::A A:::::A         M:::::::M::::M   M::::M:::::::M  E::::::EEEEEEEEEE   
+  F:::::::::::::::F     R:::::::::::::RR          A:::::A   A:::::A        M::::::M M::::M M::::M M::::::M  E:::::::::::::::E   
+  F:::::::::::::::F     R::::RRRRRR:::::R        A:::::A     A:::::A       M::::::M  M::::M::::M  M::::::M  E:::::::::::::::E   
+  F::::::FFFFFFFFFF     R::::R     R:::::R      A:::::AAAAAAAAA:::::A      M::::::M   M:::::::M   M::::::M  E::::::EEEEEEEEEE   
+  F:::::F               R::::R     R:::::R     A:::::::::::::::::::::A     M::::::M    M:::::M    M::::::M  E:::::E             
+  F:::::F               R::::R     R:::::R    A:::::AAAAAAAAAAAAA:::::A    M::::::M     MMMMM     M::::::M  E:::::E       EEEEEE
+FF:::::::FF           RR:::::R     R:::::R   A:::::A             A:::::A   M::::::M               M::::::MEE::::::EEEEEEEE:::::E
+F::::::::FF           R::::::R     R:::::R  A:::::A               A:::::A  M::::::M               M::::::ME::::::::::::::::::::E
+F::::::::FF           R::::::R     R:::::R A:::::A                 A:::::A M::::::M               M::::::ME::::::::::::::::::::E
+FFFFFFFFFFF           RRRRRRRR     RRRRRRRAAAAAAA                   AAAAAAAMMMMMMMM               MMMMMMMMEEEEEEEEEEEEEEEEEEEEEE
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                
+*/
+
+
+
+
+
+
+
 
 /******* FRAME DECODING ******************************************************/
 
@@ -519,10 +607,10 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
 static void decode_frame(ostream_t *const out, istream_t *const in,
                          const dictionary_t *const dict) {
     const u32 magic_number = (u32)IO_read_bits(in, 32);
+    
     if (magic_number == ZSTD_MAGIC_NUMBER) {
         // ZSTD frame
         decode_data_frame(out, in, dict);
-
         return;
     }
 
@@ -603,6 +691,9 @@ static void parse_frame_header(frame_header_t *const header,
     const u8 content_checksum_flag = (descriptor >> 2) & 1;
     const u8 dictionary_id_flag = descriptor & 3;
 
+    DBG(DBG_PARSING, "frame_content_size_flag=%d, single_segment_flag=%d, content_checksum_flag=%d, dictionary_id_flag=%d\n",
+    frame_content_size_flag, single_segment_flag, content_checksum_flag, dictionary_id_flag);
+
     if (reserved_bit != 0) {
         CORRUPTION();
     }
@@ -621,14 +712,16 @@ static void parse_frame_header(frame_header_t *const header,
         u8 window_descriptor = (u8)IO_read_bits(in, 8);
         u8 exponent = window_descriptor >> 3;
         u8 mantissa = window_descriptor & 7;
-
+        DBG(DBG_PARSING, "window_descriptor: exponent=%d, mantissa=%d\n",exponent,mantissa);
         // Use the algorithm from the specification to compute window size
         // https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#window_descriptor
         size_t window_base = (size_t)1 << (10 + exponent);
         size_t window_add = (window_base / 8) * mantissa;
         header->window_size = window_base + window_add;
+        DBG(DBG_PARSING, "window_descriptor: exponent=%d, mantissa=%d, window_base=%zu, window_add=%d\n",exponent, mantissa,  window_base, window_add);
     }
-
+    DBG(DBG_PARSING, "window_descriptor: window_size=%zu\n", header->window_size);
+    
     // decode dictionary id if it exists
     if (dictionary_id_flag) {
         // "This is a variable size field, which contains the ID of the
@@ -637,11 +730,11 @@ static void parse_frame_header(frame_header_t *const header,
         // make sure it uses the correct dictionary. Format is little-endian."
         const int bytes_array[] = {0, 1, 2, 4};
         const int bytes = bytes_array[dictionary_id_flag];
-
         header->dictionary_id = (u32)IO_read_bits(in, bytes * 8);
     } else {
         header->dictionary_id = 0;
     }
+    DBG(DBG_PARSING, "dictionary_id=%d\n",header->dictionary_id);
 
     // decode frame content size if it exists
     if (single_segment_flag || frame_content_size_flag) {
@@ -663,6 +756,7 @@ static void parse_frame_header(frame_header_t *const header,
     } else {
         header->frame_content_size = 0;
     }
+    DBG(DBG_PARSING, "frame_content_size=%d\n",header->frame_content_size);
 
     if (single_segment_flag) {
         // "The Window_Descriptor byte is optional. It is absent when
@@ -671,6 +765,7 @@ static void parse_frame_header(frame_header_t *const header,
         // 2^64-1 bytes (16 EB)."
         header->window_size = header->frame_content_size;
     }
+    DBG(DBG_PARSING, "window_size=%d\n",header->frame_content_size);
 }
 
 /// Decompress the data from a frame block by block
@@ -696,7 +791,8 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
         last_block = (int)IO_read_bits(in, 1);
         const int block_type = (int)IO_read_bits(in, 2);
         const size_t block_len = IO_read_bits(in, 21);
-
+        DBG(DBG_PARSING, "block_type=%d (Raw_Block/RLE_Block/Compressed_Block/Reserved)\n",block_type);
+        DBG(DBG_PARSING, "block_len=%d\n",block_len);
         switch (block_type) {
         case 0: {
             // "Raw_Block - this is an uncompressed block. Block_Size is the
@@ -706,7 +802,8 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
 
             // Copy the raw data into the output
             memcpy(write_ptr, read_ptr, block_len);
-
+            DBG(DBG_PARSING, "Raw block, copy %d bytes\n",block_len);
+            DBGMEM(DBG_BLOCK_DATA, NULL,write_ptr, block_len);
             ctx->current_total_output += block_len;
             break;
         }
@@ -719,7 +816,8 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
 
             // Copy `block_len` copies of `read_ptr[0]` to the output
             memset(write_ptr, read_ptr[0], block_len);
-
+            DBG(DBG_PARSING, "RLE block, memset %d bytes\n",block_len);
+            DBGMEM(DBG_BLOCK_DATA, NULL, write_ptr, block_len);
             ctx->current_total_output += block_len;
             break;
         }
@@ -730,6 +828,7 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
 
             // Create a sub-stream for the block
             istream_t block_stream = IO_make_sub_istream(in, block_len);
+            DBG(DBG_PARSING, "Compressed block:\n");
             decompress_block(ctx, out, &block_stream);
             break;
         }
@@ -762,8 +861,13 @@ static void decompress_block(frame_context_t *const ctx, ostream_t *const out,
 
     // Part 1: decode the literals block
     u8 *literals = NULL;
+    DBG(DBG_PARSING, "Decode literals parse\n");
     const size_t literals_size = decode_literals(ctx, in, &literals);
-
+    
+    DBG(DBG_SEQUENCES, "******************************************************************************************\n");
+    DBG(DBG_SEQUENCES, "* Decode SEQUENCES\n");
+    DBG(DBG_SEQUENCES, "******************************************************************************************\n");
+    
     // Part 2: decode the sequences block
     sequence_command_t *sequences = NULL;
     const size_t num_sequences =
@@ -776,6 +880,43 @@ static void decompress_block(frame_context_t *const ctx, ostream_t *const out,
     free(sequences);
 }
 /******* END BLOCK DECOMPRESSION **********************************************/
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                                                               
+                                                                                                                                                                               
+/*LLLLLLLLLL             IIIIIIIIIITTTTTTTTTTTTTTTTTTTTTTTEEEEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRR                  AAA               LLLLLLLLLLL                SSSSSSSSSSSSSSS 
+L:::::::::L             I::::::::IT:::::::::::::::::::::TE::::::::::::::::::::ER::::::::::::::::R                A:::A              L:::::::::L              SS:::::::::::::::S
+L:::::::::L             I::::::::IT:::::::::::::::::::::TE::::::::::::::::::::ER::::::RRRRRR:::::R              A:::::A             L:::::::::L             S:::::SSSSSS::::::S
+LL:::::::LL             II::::::IIT:::::TT:::::::TT:::::TEE::::::EEEEEEEEE::::ERR:::::R     R:::::R            A:::::::A            LL:::::::LL             S:::::S     SSSSSSS
+  L:::::L                 I::::I  TTTTTT  T:::::T  TTTTTT  E:::::E       EEEEEE  R::::R     R:::::R           A:::::::::A             L:::::L               S:::::S            
+  L:::::L                 I::::I          T:::::T          E:::::E               R::::R     R:::::R          A:::::A:::::A            L:::::L               S:::::S            
+  L:::::L                 I::::I          T:::::T          E::::::EEEEEEEEEE     R::::RRRRRR:::::R          A:::::A A:::::A           L:::::L                S::::SSSS         
+  L:::::L                 I::::I          T:::::T          E:::::::::::::::E     R:::::::::::::RR          A:::::A   A:::::A          L:::::L                 SS::::::SSSSS    
+  L:::::L                 I::::I          T:::::T          E:::::::::::::::E     R::::RRRRRR:::::R        A:::::A     A:::::A         L:::::L                   SSS::::::::SS  
+  L:::::L                 I::::I          T:::::T          E::::::EEEEEEEEEE     R::::R     R:::::R      A:::::AAAAAAAAA:::::A        L:::::L                      SSSSSS::::S 
+  L:::::L                 I::::I          T:::::T          E:::::E               R::::R     R:::::R     A:::::::::::::::::::::A       L:::::L                           S:::::S
+  L:::::L         LLLLLL  I::::I          T:::::T          E:::::E       EEEEEE  R::::R     R:::::R    A:::::AAAAAAAAAAAAA:::::A      L:::::L         LLLLLL            S:::::S
+LL:::::::LLLLLLLLL:::::LII::::::II      TT:::::::TT      EE::::::EEEEEEEE:::::ERR:::::R     R:::::R   A:::::A             A:::::A   LL:::::::LLLLLLLLL:::::LSSSSSSS     S:::::S
+L::::::::::::::::::::::LI::::::::I      T:::::::::T      E::::::::::::::::::::ER::::::R     R:::::R  A:::::A               A:::::A  L::::::::::::::::::::::LS::::::SSSSSS:::::S
+L::::::::::::::::::::::LI::::::::I      T:::::::::T      E::::::::::::::::::::ER::::::R     R:::::R A:::::A                 A:::::A L::::::::::::::::::::::LS:::::::::::::::SS 
+LLLLLLLLLLLLLLLLLLLLLLLLIIIIIIIIII      TTTTTTTTTTT      EEEEEEEEEEEEEEEEEEEEEERRRRRRRR     RRRRRRRAAAAAAA                   AAAAAAALLLLLLLLLLLLLLLLLLLLLLLL SSSSSSSSSSSSSSS*/   
+                                                                                                                                                                               
+                                                                                                                                                                               
+                                                                                                                                                                               
+                                                                                                                                                                               
+                                                                                                                                                                               
+                                                                                                                                                                               
+                                                                                                                                                                              
+
+
 
 /******* LITERALS DECODING ****************************************************/
 static size_t decode_literals_simple(istream_t *const in, u8 **const literals,
@@ -810,7 +951,9 @@ static size_t decode_literals(frame_context_t *const ctx, istream_t *const in,
     // size_format takes between 1 and 2 bits
     int block_type = (int)IO_read_bits(in, 2);
     int size_format = (int)IO_read_bits(in, 2);
-
+    DBG(DBG_LITERALS, "******************************************************************************************\n");
+    DBG(DBG_LITERALS, "* LIT: block_type=%d(0=raw,1=rle,2=compressed,3=repeat), size_format=%d()\n",block_type, size_format);
+    DBG(DBG_LITERALS, "******************************************************************************************\n");
     if (block_type <= 1) {
         // Raw or RLE literals block
         return decode_literals_simple(in, literals, block_type,
@@ -848,7 +991,7 @@ static size_t decode_literals_simple(istream_t *const in, u8 **const literals,
         // Size format is in range 0-3
         IMPOSSIBLE();
     }
-
+    DBG(DBG_LITERALS, "LIT: size=%d\n",size);
     if (size > MAX_LITERALS_SIZE) {
         CORRUPTION();
     }
@@ -863,12 +1006,16 @@ static size_t decode_literals_simple(istream_t *const in, u8 **const literals,
         // "Raw_Literals_Block - Literals are stored uncompressed."
         const u8 *const read_ptr = IO_get_read_ptr(in, size);
         memcpy(*literals, read_ptr, size);
+        DBG(DBG_LITERALS, "LIT: raw data, size=%d\n",size);
+        DBGMEM(DBG_LITERALS_DATA, NULL, *literals, size);
         break;
     }
     case 1: {
         // "RLE_Literals_Block - Literals consist of a single byte value repeated N times."
         const u8 *const read_ptr = IO_get_read_ptr(in, 1);
         memset(*literals, read_ptr[0], size);
+        DBG(DBG_LITERALS, "LIT: RLE data, size=%d\n",size);
+        DBGMEM(DBG_LITERALS_DATA, NULL, *literals, size);
         break;
     }
     default:
@@ -892,7 +1039,7 @@ static size_t decode_literals_compressed(frame_context_t *const ctx,
         // "A single stream. Both Compressed_Size and Regenerated_Size use 10
         // bits (0-1023)."
         num_streams = 1;
-    // Fall through as it has the same size format
+        // Fall through as it has the same size format
         /* fallthrough */
     case 1:
         // "4 streams. Both Compressed_Size and Regenerated_Size use 10 bits
@@ -919,6 +1066,8 @@ static size_t decode_literals_compressed(frame_context_t *const ctx,
     if (regenerated_size > MAX_LITERALS_SIZE) {
         CORRUPTION();
     }
+    DBG(DBG_LITERALS, "LIT: Compressed literals (by huff), decompressed size=%d\n",regenerated_size);
+    //DBGMEM(DBG_LITERALS_DATA, "LIT rle data", *literals, size);
 
     *literals = malloc(regenerated_size);
     if (!*literals) {
@@ -932,23 +1081,24 @@ static size_t decode_literals_compressed(frame_context_t *const ctx,
         // Decode the provided Huffman table
         // "This section is only present when Literals_Block_Type type is
         // Compressed_Literals_Block (2)."
-
         HUF_free_dtable(&ctx->literals_dtable);
+        DBG(DBG_LITERALS, "LIT HUFF TBL: New huffman table\n");
         decode_huf_table(&ctx->literals_dtable, &huf_stream);
     } else {
         // If the previous Huffman table is being repeated, ensure it exists
+        DBG(DBG_LITERALS, "LIT HUFF: Reusing prev. huffman table\n");
         if (!ctx->literals_dtable.symbols) {
             CORRUPTION();
         }
     }
-
+    DBG(DBG_LITERALS, "LIT HUFF: Huff table availible, decoding %d streams\n", num_streams);
     size_t symbols_decoded;
     if (num_streams == 1) {
         symbols_decoded = HUF_decompress_1stream(&ctx->literals_dtable, &lit_stream, &huf_stream);
     } else {
         symbols_decoded = HUF_decompress_4stream(&ctx->literals_dtable, &lit_stream, &huf_stream);
     }
-
+    DBG(DBG_LITERALS, "LIT HUFF: decoded %d symbols\n", symbols_decoded);
     if (symbols_decoded != regenerated_size) {
         CORRUPTION();
     }
@@ -968,7 +1118,7 @@ static void decode_huf_table(HUF_dtable *const dtable, istream_t *const in) {
     memset(weights, 0, sizeof(weights));
 
     int num_symbs;
-
+    DBG(DBG_LITERALS, "LIT TBL: Header length=%d\n",header);
     if (header >= 128) {
         // "This is a direct representation, where each Weight is written
         // directly as a 4 bits field (0-15). The full representation occupies
@@ -977,9 +1127,9 @@ static void decode_huf_table(HUF_dtable *const dtable, istream_t *const in) {
         // 127"
         num_symbs = header - 127;
         const size_t bytes = (num_symbs + 1) / 2;
-
         const u8 *const weight_src = IO_get_read_ptr(in, bytes);
-
+        DBG(DBG_LITERALS, "LIT TBL: No FSE encoding, num_symbs=%d, encoded length=%d\n",num_symbs, bytes);
+        DBGMEM(DBG_LITERALS_DATA, "LIT TBL: literals huff weights table",weight_src, bytes);
         for (int i = 0; i < num_symbs; i++) {
             // "They are encoded forward, 2
             // weights to a byte with the first weight taking the top four bits
@@ -991,12 +1141,14 @@ static void decode_huf_table(HUF_dtable *const dtable, istream_t *const in) {
             } else {
                 weights[i] = weight_src[i / 2] & 0xf;
             }
+            DBG(DBG_LITERALS, "weights[%i(%c)]=%d\n",i,CHAR_SAFE(i), weights[i]);
         }
     } else {
         // The weights are FSE encoded, decode them before we can construct the
         // table
         istream_t fse_stream = IO_make_sub_istream(in, header);
         ostream_t weight_stream = IO_make_ostream(weights, HUF_MAX_SYMBS);
+        DBG(DBG_LITERALS, "LIT TBL: FSE encoded.\n");
         fse_decode_hufweights(&weight_stream, &fse_stream, &num_symbs);
     }
 
@@ -1013,16 +1165,47 @@ static void fse_decode_hufweights(ostream_t *weights, istream_t *const in,
     // "An FSE bitstream starts by a header, describing probabilities
     // distribution. It will create a Decoding Table. For a list of Huffman
     // weights, maximum accuracy is 7 bits."
-    FSE_decode_header(&dtable, in, MAX_ACCURACY_LOG);
+    DBG(DBG_LITERALS, "LIT TBL: FSE decoding, MAX_ACCURACY_LOG=%d.\n", MAX_ACCURACY_LOG);
+    FSE_decode_header("huff-tbl",&dtable, in, MAX_ACCURACY_LOG);
 
     // Decode the weights
     *num_symbs = FSE_decompress_interleaved2(&dtable, weights, in);
 
     FSE_free_dtable(&dtable);
 }
-/******* END LITERALS DECODING ************************************************/
+/******* END LITERALS DECODING ************************************************
 
-/******* SEQUENCE DECODING ****************************************************/
+
+
+                                                                                                                                                                                        
+                                                                                                                                                                                                
+                                                                                                                                                                                           
+   SSSSSSSSSSSSSSS EEEEEEEEEEEEEEEEEEEEEE     QQQQQQQQQ           DDDDDDDDDDDDD      EEEEEEEEEEEEEEEEEEEEEE       CCCCCCCCCCCCC     OOOOOOOOO     DDDDDDDDDDDDD      EEEEEEEEEEEEEEEEEEEEEE
+ SS:::::::::::::::SE::::::::::::::::::::E   QQ:::::::::QQ         D::::::::::::DDD   E::::::::::::::::::::E    CCC::::::::::::C   OO:::::::::OO   D::::::::::::DDD   E::::::::::::::::::::E
+S:::::SSSSSS::::::SE::::::::::::::::::::E QQ:::::::::::::QQ       D:::::::::::::::DD E::::::::::::::::::::E  CC:::::::::::::::C OO:::::::::::::OO D:::::::::::::::DD E::::::::::::::::::::E
+S:::::S     SSSSSSSEE::::::EEEEEEEEE::::EQ:::::::QQQ:::::::Q      DDD:::::DDDDD:::::DEE::::::EEEEEEEEE::::E C:::::CCCCCCCC::::CO:::::::OOO:::::::ODDD:::::DDDDD:::::DEE::::::EEEEEEEEE::::E
+S:::::S              E:::::E       EEEEEEQ::::::O   Q::::::Q        D:::::D    D:::::D E:::::E       EEEEEEC:::::C       CCCCCCO::::::O   O::::::O  D:::::D    D:::::D E:::::E       EEEEEE
+S:::::S              E:::::E             Q:::::O     Q:::::Q        D:::::D     D:::::DE:::::E            C:::::C              O:::::O     O:::::O  D:::::D     D:::::DE:::::E             
+ S::::SSSS           E::::::EEEEEEEEEE   Q:::::O     Q:::::Q        D:::::D     D:::::DE::::::EEEEEEEEEE  C:::::C              O:::::O     O:::::O  D:::::D     D:::::DE::::::EEEEEEEEEE   
+  SS::::::SSSSS      E:::::::::::::::E   Q:::::O     Q:::::Q        D:::::D     D:::::DE:::::::::::::::E  C:::::C              O:::::O     O:::::O  D:::::D     D:::::DE:::::::::::::::E   
+    SSS::::::::SS    E:::::::::::::::E   Q:::::O     Q:::::Q        D:::::D     D:::::DE:::::::::::::::E  C:::::C              O:::::O     O:::::O  D:::::D     D:::::DE:::::::::::::::E   
+       SSSSSS::::S   E::::::EEEEEEEEEE   Q:::::O     Q:::::Q        D:::::D     D:::::DE::::::EEEEEEEEEE  C:::::C              O:::::O     O:::::O  D:::::D     D:::::DE::::::EEEEEEEEEE   
+            S:::::S  E:::::E             Q:::::O  QQQQ:::::Q        D:::::D     D:::::DE:::::E            C:::::C              O:::::O     O:::::O  D:::::D     D:::::DE:::::E             
+            S:::::S  E:::::E       EEEEEEQ::::::O Q::::::::Q        D:::::D    D:::::D E:::::E       EEEEEEC:::::C       CCCCCCO::::::O   O::::::O  D:::::D    D:::::D E:::::E       EEEEEE
+SSSSSSS     S:::::SEE::::::EEEEEEEE:::::EQ:::::::QQ::::::::Q      DDD:::::DDDDD:::::DEE::::::EEEEEEEE:::::E C:::::CCCCCCCC::::CO:::::::OOO:::::::ODDD:::::DDDDD:::::DEE::::::EEEEEEEE:::::E
+S::::::SSSSSS:::::SE::::::::::::::::::::E QQ::::::::::::::Q       D:::::::::::::::DD E::::::::::::::::::::E  CC:::::::::::::::C OO:::::::::::::OO D:::::::::::::::DD E::::::::::::::::::::E
+S:::::::::::::::SS E::::::::::::::::::::E   QQ:::::::::::Q        D::::::::::::DDD   E::::::::::::::::::::E    CCC::::::::::::C   OO:::::::::OO   D::::::::::::DDD   E::::::::::::::::::::E
+ SSSSSSSSSSSSSSS   EEEEEEEEEEEEEEEEEEEEEE     QQQQQQQQ::::QQ      DDDDDDDDDDDDD      EEEEEEEEEEEEEEEEEEEEEE       CCCCCCCCCCCCC     OOOOOOOOO     DDDDDDDDDDDDD      EEEEEEEEEEEEEEEEEEEEEE
+                                                      Q:::::Q                                                                                                                              
+                                                       QQQQQQ                                                                                                                              
+                                                                                                                                                                                           
+                                                                                                                                                                                                                                                                                     
+                                                                                                                                                                                             
+                                                                                                               
+
+
+
+******* SEQUENCE DECODING ****************************************************/
 /// The combination of FSE states needed to decode sequences
 typedef struct {
     FSE_dtable ll_table;
@@ -1090,7 +1273,7 @@ static void decompress_sequences(frame_context_t *const ctx,
 static sequence_command_t decode_sequence(sequence_states_t *const state,
                                           const u8 *const src,
                                           i64 *const offset);
-static void decode_seq_table(FSE_dtable *const table, istream_t *const in,
+static void decode_seq_table(const char* table_name,FSE_dtable *const table, istream_t *const in,
                                const seq_part_t type, const seq_mode_t mode);
 
 static size_t decode_sequences(frame_context_t *const ctx, istream_t *in,
@@ -1124,6 +1307,10 @@ static size_t decode_sequences(frame_context_t *const ctx, istream_t *in,
         // "Number_of_Sequences = byte1 + (byte2<<8) + 0x7F00 . Uses 3 bytes."
         num_sequences = IO_read_bits(in, 16) + 0x7F00;
     }
+
+    DBG(DBG_SEQUENCES, "num_sequences = %d\n",num_sequences);
+
+    
 
     *sequences = malloc(num_sequences * sizeof(sequence_command_t));
     if (!*sequences) {
@@ -1166,13 +1353,16 @@ static void decompress_sequences(frame_context_t *const ctx, istream_t *in,
     // Offsets
     // Match Lengths"
     // Update the tables we have stored in the context
-    decode_seq_table(&ctx->ll_dtable, in, seq_literal_length,
+    DBG(DBG_SEQUENCES, "ll type=%d, of type=%d, ml type=%d (seq_predefined = 0, seq_rle = 1, seq_fse = 2, repeat = 3)\n"
+                        ,num_sequences,(compression_modes >> 6) & 3,(compression_modes >> 4) & 3,(compression_modes >> 2) & 3);
+
+    decode_seq_table("ll",&ctx->ll_dtable, in, seq_literal_length,
                      (compression_modes >> 6) & 3);
 
-    decode_seq_table(&ctx->of_dtable, in, seq_offset,
+    decode_seq_table("of",&ctx->of_dtable, in, seq_offset,
                      (compression_modes >> 4) & 3);
 
-    decode_seq_table(&ctx->ml_dtable, in, seq_match_length,
+    decode_seq_table("ml", &ctx->ml_dtable, in, seq_match_length,
                      (compression_modes >> 2) & 3);
 
 
@@ -1263,7 +1453,7 @@ static sequence_command_t decode_sequence(sequence_states_t *const states,
 
 /// Given a sequence part and table mode, decode the FSE distribution
 /// Errors if the mode is `seq_repeat` without a pre-existing table in `table`
-static void decode_seq_table(FSE_dtable *const table, istream_t *const in,
+static void decode_seq_table(const char* table_name,FSE_dtable *const table, istream_t *const in,
                              const seq_part_t type, const seq_mode_t mode) {
     // Constant arrays indexed by seq_part_t
     const i16 *const default_distributions[] = {SEQ_LITERAL_LENGTH_DEFAULT_DIST,
@@ -1273,7 +1463,7 @@ static void decode_seq_table(FSE_dtable *const table, istream_t *const in,
     const size_t default_distribution_accuracies[] = {6, 5, 6};
 
     const size_t max_accuracies[] = {9, 8, 9};
-
+    DBG(DBG_SEQUENCES, "SEQ: decode seq table, mode=%d (predefined, RLE, FSE, repeat)\n",mode);
     if (mode != seq_repeat) {
         // Free old one before overwriting
         FSE_free_dtable(table);
@@ -1285,26 +1475,29 @@ static void decode_seq_table(FSE_dtable *const table, istream_t *const in,
         const i16 *distribution = default_distributions[type];
         const size_t symbs = default_distribution_lengths[type];
         const size_t accuracy_log = default_distribution_accuracies[type];
-
-        FSE_init_dtable(table, distribution, symbs, accuracy_log);
+        DBG(DBG_SEQUENCES, "SEQ: FSE compressed sequences, DEFAULT distribution table\n");
+        FSE_init_dtable(table_name, table, distribution, symbs, accuracy_log);
         break;
     }
     case seq_rle: {
         // "RLE_Mode : it's a single code, repeated Number_of_Sequences times."
         const u8 symb = IO_get_read_ptr(in, 1)[0];
+        DBG(DBG_SEQUENCES, "SEQ: RLE table, byte=0x%x\n",symb);
         FSE_init_dtable_rle(table, symb);
         break;
     }
     case seq_fse: {
         // "FSE_Compressed_Mode : standard FSE compression. A distribution table
         // will be present "
-        FSE_decode_header(table, in, max_accuracies[type]);
+        DBG(DBG_SEQUENCES, "SEQ: FSE compressed sequences,  distribution table\n");
+        FSE_decode_header(table_name, table, in, max_accuracies[type]);
         break;
     }
     case seq_repeat:
         // "Repeat_Mode : re-use distribution table from previous compressed
         // block."
         // Nothing to do here, table will be unchanged
+        DBG(DBG_SEQUENCES, "SEQ: FSE compressed sequences, reuse OLD distribution table\n");
         if (!table->symbols) {
             // This mode is invalid if we don't already have a table
             CORRUPTION();
@@ -1317,9 +1510,42 @@ static void decode_seq_table(FSE_dtable *const table, istream_t *const in,
     }
 
 }
-/******* END SEQUENCE DECODING ************************************************/
+/******* END SEQUENCE DECODING ************************************************
 
-/******* SEQUENCE EXECUTION ***************************************************/
+
+
+
+
+
+                                                                                                                                                    
+   SSSSSSSSSSSSSSS EEEEEEEEEEEEEEEEEEEEEE     QQQQQQQQQ           EEEEEEEEEEEEEEEEEEEEEEXXXXXXX       XXXXXXXEEEEEEEEEEEEEEEEEEEEEE       CCCCCCCCCCCCC
+ SS:::::::::::::::SE::::::::::::::::::::E   QQ:::::::::QQ         E::::::::::::::::::::EX:::::X       X:::::XE::::::::::::::::::::E    CCC::::::::::::C
+S:::::SSSSSS::::::SE::::::::::::::::::::E QQ:::::::::::::QQ       E::::::::::::::::::::EX:::::X       X:::::XE::::::::::::::::::::E  CC:::::::::::::::C
+S:::::S     SSSSSSSEE::::::EEEEEEEEE::::EQ:::::::QQQ:::::::Q      EE::::::EEEEEEEEE::::EX::::::X     X::::::XEE::::::EEEEEEEEE::::E C:::::CCCCCCCC::::C
+S:::::S              E:::::E       EEEEEEQ::::::O   Q::::::Q        E:::::E       EEEEEEXXX:::::X   X:::::XXX  E:::::E       EEEEEEC:::::C       CCCCCC
+S:::::S              E:::::E             Q:::::O     Q:::::Q        E:::::E                X:::::X X:::::X     E:::::E            C:::::C              
+ S::::SSSS           E::::::EEEEEEEEEE   Q:::::O     Q:::::Q        E::::::EEEEEEEEEE       X:::::X:::::X      E::::::EEEEEEEEEE  C:::::C              
+  SS::::::SSSSS      E:::::::::::::::E   Q:::::O     Q:::::Q        E:::::::::::::::E        X:::::::::X       E:::::::::::::::E  C:::::C              
+    SSS::::::::SS    E:::::::::::::::E   Q:::::O     Q:::::Q        E:::::::::::::::E        X:::::::::X       E:::::::::::::::E  C:::::C              
+       SSSSSS::::S   E::::::EEEEEEEEEE   Q:::::O     Q:::::Q        E::::::EEEEEEEEEE       X:::::X:::::X      E::::::EEEEEEEEEE  C:::::C              
+            S:::::S  E:::::E             Q:::::O  QQQQ:::::Q        E:::::E                X:::::X X:::::X     E:::::E            C:::::C              
+            S:::::S  E:::::E       EEEEEEQ::::::O Q::::::::Q        E:::::E       EEEEEEXXX:::::X   X:::::XXX  E:::::E       EEEEEEC:::::C       CCCCCC
+SSSSSSS     S:::::SEE::::::EEEEEEEE:::::EQ:::::::QQ::::::::Q      EE::::::EEEEEEEE:::::EX::::::X     X::::::XEE::::::EEEEEEEE:::::E C:::::CCCCCCCC::::C
+S::::::SSSSSS:::::SE::::::::::::::::::::E QQ::::::::::::::Q       E::::::::::::::::::::EX:::::X       X:::::XE::::::::::::::::::::E  CC:::::::::::::::C
+S:::::::::::::::SS E::::::::::::::::::::E   QQ:::::::::::Q        E::::::::::::::::::::EX:::::X       X:::::XE::::::::::::::::::::E    CCC::::::::::::C
+ SSSSSSSSSSSSSSS   EEEEEEEEEEEEEEEEEEEEEE     QQQQQQQQ::::QQ      EEEEEEEEEEEEEEEEEEEEEEXXXXXXX       XXXXXXXEEEEEEEEEEEEEEEEEEEEEE       CCCCCCCCCCCCC
+                                                      Q:::::Q                                                                                          
+                                                       QQQQQQ         
+
+
+
+
+
+
+
+
+
+******* SEQUENCE EXECUTION ***************************************************/
 static void execute_sequences(frame_context_t *const ctx, ostream_t *const out,
                               const u8 *const literals,
                               const size_t literals_len,
@@ -1331,9 +1557,13 @@ static void execute_sequences(frame_context_t *const ctx, ostream_t *const out,
     size_t total_output = ctx->current_total_output;
 
     for (size_t i = 0; i < num_sequences; i++) {
+        u8* last_data = out->ptr;
         const sequence_command_t seq = sequences[i];
         {
             const u32 literals_size = copy_literals(seq.literal_length, &litstream, out);
+            DBG(DBG_LZ77, "LZ77: LITTERALS COPY %d bytes.\n", literals_size);
+            DBGMEM(DBG_LZ77_DATA, NULL, last_data ,literals_size);
+            last_data = out->ptr;
             total_output += literals_size;
         }
 
@@ -1342,7 +1572,10 @@ static void execute_sequences(frame_context_t *const ctx, ostream_t *const out,
         size_t const match_length = seq.match_length;
 
         execute_match_copy(ctx, offset, match_length, total_output, out);
-
+        
+        DBG(DBG_LZ77, "LZ77: MATCH COPY %d bytes.\n", match_length);
+        DBGMEM(DBG_LZ77_DATA, NULL, last_data ,match_length);
+        //last_data = out->ptr;
         total_output += match_length;
     }
 
@@ -1460,6 +1693,14 @@ static void execute_match_copy(frame_context_t *const ctx, size_t offset,
 }
 /******* END SEQUENCE EXECUTION ***********************************************/
 
+
+
+
+
+
+
+
+
 /******* OUTPUT SIZE COUNTING *************************************************/
 /// Get the decompressed size of an input stream so memory can be allocated in
 /// advance.
@@ -1488,9 +1729,40 @@ size_t ZSTD_get_decompressed_size(const void *src, const size_t src_len) {
         }
     }
 }
-/******* END OUTPUT SIZE COUNTING *********************************************/
+/******* END OUTPUT SIZE COUNTING *********************************************
 
-/******* DICTIONARY PARSING ***************************************************/
+
+
+
+
+
+
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+DDDDDDDDDDDDD      IIIIIIIIII      CCCCCCCCCCCCCTTTTTTTTTTTTTTTTTTTTTTT     PPPPPPPPPPPPPPPPP        AAA               RRRRRRRRRRRRRRRRR      SSSSSSSSSSSSSSS EEEEEEEEEEEEEEEEEEEEEE
+D::::::::::::DDD   I::::::::I   CCC::::::::::::CT:::::::::::::::::::::T     P::::::::::::::::P      A:::A              R::::::::::::::::R   SS:::::::::::::::SE::::::::::::::::::::E
+D:::::::::::::::DD I::::::::I CC:::::::::::::::CT:::::::::::::::::::::T     P::::::PPPPPP:::::P    A:::::A             R::::::RRRRRR:::::R S:::::SSSSSS::::::SE::::::::::::::::::::E
+DDD:::::DDDDD:::::DII::::::IIC:::::CCCCCCCC::::CT:::::TT:::::::TT:::::T     PP:::::P     P:::::P  A:::::::A            RR:::::R     R:::::RS:::::S     SSSSSSSEE::::::EEEEEEEEE::::E
+  D:::::D    D:::::D I::::I C:::::C       CCCCCCTTTTTT  T:::::T  TTTTTT       P::::P     P:::::P A:::::::::A             R::::R     R:::::RS:::::S              E:::::E       EEEEEE
+  D:::::D     D:::::DI::::IC:::::C                      T:::::T               P::::P     P:::::PA:::::A:::::A            R::::R     R:::::RS:::::S              E:::::E             
+  D:::::D     D:::::DI::::IC:::::C                      T:::::T               P::::PPPPPP:::::PA:::::A A:::::A           R::::RRRRRR:::::R  S::::SSSS           E::::::EEEEEEEEEE   
+  D:::::D     D:::::DI::::IC:::::C                      T:::::T               P:::::::::::::PPA:::::A   A:::::A          R:::::::::::::RR    SS::::::SSSSS      E:::::::::::::::E   
+  D:::::D     D:::::DI::::IC:::::C                      T:::::T               P::::PPPPPPPPP A:::::A     A:::::A         R::::RRRRRR:::::R     SSS::::::::SS    E:::::::::::::::E   
+  D:::::D     D:::::DI::::IC:::::C                      T:::::T               P::::P        A:::::AAAAAAAAA:::::A        R::::R     R:::::R       SSSSSS::::S   E::::::EEEEEEEEEE   
+  D:::::D     D:::::DI::::IC:::::C                      T:::::T               P::::P       A:::::::::::::::::::::A       R::::R     R:::::R            S:::::S  E:::::E             
+  D:::::D    D:::::D I::::I C:::::C       CCCCCC        T:::::T               P::::P      A:::::AAAAAAAAAAAAA:::::A      R::::R     R:::::R            S:::::S  E:::::E       EEEEEE
+DDD:::::DDDDD:::::DII::::::IIC:::::CCCCCCCC::::C      TT:::::::TT           PP::::::PP   A:::::A             A:::::A   RR:::::R     R:::::RSSSSSSS     S:::::SEE::::::EEEEEEEE:::::E
+D:::::::::::::::DD I::::::::I CC:::::::::::::::C      T:::::::::T           P::::::::P  A:::::A               A:::::A  R::::::R     R:::::RS::::::SSSSSS:::::SE::::::::::::::::::::E
+D::::::::::::DDD   I::::::::I   CCC::::::::::::C      T:::::::::T           P::::::::P A:::::A                 A:::::A R::::::R     R:::::RS:::::::::::::::SS E::::::::::::::::::::E
+DDDDDDDDDDDDD      IIIIIIIIII      CCCCCCCCCCCCC      TTTTTTTTTTT           PPPPPPPPPPAAAAAAA                   AAAAAAARRRRRRRR     RRRRRRR SSSSSSSSSSSSSSS   EEEEEEEEEEEEEEEEEEEEEE
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                     
+
+
+
+******* DICTIONARY PARSING ***************************************************/
 dictionary_t* create_dictionary() {
     dictionary_t* const dict = calloc(1, sizeof(dictionary_t));
     if (!dict) {
@@ -1528,8 +1800,7 @@ void parse_dictionary(dictionary_t *const dict, const void *src,
     if (src == NULL) { /* cannot initialize dictionary with null src */
         NULL_SRC();
     }
-    if (src_len < 8) {
-        DICT_SIZE_ERROR();
+    if (src_len < 8) {DICT_SIZE_ERROR();
     }
 
     istream_t in = IO_make_istream(byte_src, src_len);
@@ -1552,9 +1823,9 @@ void parse_dictionary(dictionary_t *const dict, const void *src,
     // little-endian each, for a total of 12 bytes. Each recent offset must have
     // a value < dictionary size."
     decode_huf_table(&dict->literals_dtable, &in);
-    decode_seq_table(&dict->of_dtable, &in, seq_offset, seq_fse);
-    decode_seq_table(&dict->ml_dtable, &in, seq_match_length, seq_fse);
-    decode_seq_table(&dict->ll_dtable, &in, seq_literal_length, seq_fse);
+    decode_seq_table("of", &dict->of_dtable, &in, seq_offset, seq_fse);
+    decode_seq_table("ml", &dict->ml_dtable, &in, seq_match_length, seq_fse);
+    decode_seq_table("ll", &dict->ll_dtable, &in, seq_literal_length, seq_fse);
 
     // Read in the previous offset history
     dict->previous_offsets[0] = IO_read_bits(&in, 32);
@@ -1676,9 +1947,41 @@ static void frame_context_apply_dict(frame_context_t *const ctx,
 }
 
 #endif
-/******* END DICTIONARY PARSING ***********************************************/
+/******* END DICTIONARY PARSING ***********************************************
 
-/******* IO STREAM OPERATIONS *************************************************/
+
+
+
+
+                                                                                                                                                                                      
+                                                                                                                                                                                      
+IIIIIIIIII     OOOOOOOOO             SSSSSSSSSSSSSSS TTTTTTTTTTTTTTTTTTTTTTTRRRRRRRRRRRRRRRRR   EEEEEEEEEEEEEEEEEEEEEE               AAA               MMMMMMMM               MMMMMMMM
+I::::::::I   OO:::::::::OO         SS:::::::::::::::ST:::::::::::::::::::::TR::::::::::::::::R  E::::::::::::::::::::E              A:::A              M:::::::M             M:::::::M
+I::::::::I OO:::::::::::::OO      S:::::SSSSSS::::::ST:::::::::::::::::::::TR::::::RRRRRR:::::R E::::::::::::::::::::E             A:::::A             M::::::::M           M::::::::M
+II::::::IIO:::::::OOO:::::::O     S:::::S     SSSSSSST:::::TT:::::::TT:::::TRR:::::R     R:::::REE::::::EEEEEEEEE::::E            A:::::::A            M:::::::::M         M:::::::::M
+  I::::I  O::::::O   O::::::O     S:::::S            TTTTTT  T:::::T  TTTTTT  R::::R     R:::::R  E:::::E       EEEEEE           A:::::::::A           M::::::::::M       M::::::::::M
+  I::::I  O:::::O     O:::::O     S:::::S                    T:::::T          R::::R     R:::::R  E:::::E                       A:::::A:::::A          M:::::::::::M     M:::::::::::M
+  I::::I  O:::::O     O:::::O      S::::SSSS                 T:::::T          R::::RRRRRR:::::R   E::::::EEEEEEEEEE            A:::::A A:::::A         M:::::::M::::M   M::::M:::::::M
+  I::::I  O:::::O     O:::::O       SS::::::SSSSS            T:::::T          R:::::::::::::RR    E:::::::::::::::E           A:::::A   A:::::A        M::::::M M::::M M::::M M::::::M
+  I::::I  O:::::O     O:::::O         SSS::::::::SS          T:::::T          R::::RRRRRR:::::R   E:::::::::::::::E          A:::::A     A:::::A       M::::::M  M::::M::::M  M::::::M
+  I::::I  O:::::O     O:::::O            SSSSSS::::S         T:::::T          R::::R     R:::::R  E::::::EEEEEEEEEE         A:::::AAAAAAAAA:::::A      M::::::M   M:::::::M   M::::::M
+  I::::I  O:::::O     O:::::O                 S:::::S        T:::::T          R::::R     R:::::R  E:::::E                  A:::::::::::::::::::::A     M::::::M    M:::::M    M::::::M
+  I::::I  O::::::O   O::::::O                 S:::::S        T:::::T          R::::R     R:::::R  E:::::E       EEEEEE    A:::::AAAAAAAAAAAAA:::::A    M::::::M     MMMMM     M::::::M
+II::::::IIO:::::::OOO:::::::O     SSSSSSS     S:::::S      TT:::::::TT      RR:::::R     R:::::REE::::::EEEEEEEE:::::E   A:::::A             A:::::A   M::::::M               M::::::M
+I::::::::I OO:::::::::::::OO      S::::::SSSSSS:::::S      T:::::::::T      R::::::R     R:::::RE::::::::::::::::::::E  A:::::A               A:::::A  M::::::M               M::::::M
+I::::::::I   OO:::::::::OO        S:::::::::::::::SS       T:::::::::T      R::::::R     R:::::RE::::::::::::::::::::E A:::::A                 A:::::A M::::::M               M::::::M
+IIIIIIIIII     OOOOOOOOO           SSSSSSSSSSSSSSS         TTTTTTTTTTT      RRRRRRRR     RRRRRRREEEEEEEEEEEEEEEEEEEEEEAAAAAAA                   AAAAAAAMMMMMMMM               MMMMMMMM
+                                                                                                                                                                                      
+                                                                                                                                                                                      
+                                                                                                                                                                                      
+                                                                                                                                                                                      
+                                                                                              
+
+
+
+
+
+******* IO STREAM OPERATIONS *************************************************/
 
 /// Reads `num` bits from a bitstream, and updates the internal offset
 static inline u64 IO_read_bits(istream_t *const in, const int num_bits) {
@@ -1700,6 +2003,7 @@ static inline u64 IO_read_bits(istream_t *const in, const int num_bits) {
 
     return result;
 }
+
 
 /// If a non-zero number of bits have been read from the current byte, advance
 /// the offset to the next byte
@@ -1793,7 +2097,7 @@ static inline void IO_advance_input(istream_t *const in, size_t len) {
 
 /// Returns an `ostream_t` constructed from the given pointer and length
 static inline ostream_t IO_make_ostream(u8 *out, size_t len) {
-    return (ostream_t) { out, len };
+    return (ostream_t) { out, len};
 }
 
 /// Returns an `istream_t` constructed from the given pointer and length
@@ -1811,9 +2115,41 @@ static inline istream_t IO_make_sub_istream(istream_t *const in, size_t len) {
     // Make a substream using the pointer to those `len` bytes
     return IO_make_istream(ptr, len);
 }
-/******* END IO STREAM OPERATIONS *********************************************/
+/******* END IO STREAM OPERATIONS *********************************************
 
-/******* BITSTREAM OPERATIONS *************************************************/
+
+
+
+
+
+                                                                 
+                                                                        
+BBBBBBBBBBBBBBBBB   IIIIIIIIIITTTTTTTTTTTTTTTTTTTTTTT   SSSSSSSSSSSSSSS 
+B::::::::::::::::B  I::::::::IT:::::::::::::::::::::T SS:::::::::::::::S
+B::::::BBBBBB:::::B I::::::::IT:::::::::::::::::::::TS:::::SSSSSS::::::S
+BB:::::B     B:::::BII::::::IIT:::::TT:::::::TT:::::TS:::::S     SSSSSSS
+  B::::B     B:::::B  I::::I  TTTTTT  T:::::T  TTTTTTS:::::S            
+  B::::B     B:::::B  I::::I          T:::::T        S:::::S            
+  B::::BBBBBB:::::B   I::::I          T:::::T         S::::SSSS         
+  B:::::::::::::BB    I::::I          T:::::T          SS::::::SSSSS    
+  B::::BBBBBB:::::B   I::::I          T:::::T            SSS::::::::SS  
+  B::::B     B:::::B  I::::I          T:::::T               SSSSSS::::S 
+  B::::B     B:::::B  I::::I          T:::::T                    S:::::S
+  B::::B     B:::::B  I::::I          T:::::T                    S:::::S
+BB:::::BBBBBB::::::BII::::::II      TT:::::::TT      SSSSSSS     S:::::S
+B:::::::::::::::::B I::::::::I      T:::::::::T      S::::::SSSSSS:::::S
+B::::::::::::::::B  I::::::::I      T:::::::::T      S:::::::::::::::SS 
+BBBBBBBBBBBBBBBBB   IIIIIIIIII      TTTTTTTTTTT       SSSSSSSSSSSSSSS   
+                                                                        
+                                                                        
+                                                                        
+                                                                        
+                                                                        
+
+
+
+
+******* BITSTREAM OPERATIONS *************************************************/
 /// Read `num` bits (up to 64) from `src + offset`, where `offset` is in bits
 static inline u64 read_bits_LE(const u8 *src, const int num_bits,
                                const size_t offset) {
@@ -1877,9 +2213,43 @@ static inline int highest_set_bit(const u64 num) {
     }
     return -1;
 }
-/******* END BIT COUNTING OPERATIONS ******************************************/
+/******* END BIT COUNTING OPERATIONS ******************************************
 
-/******* HUFFMAN PRIMITIVES ***************************************************/
+
+
+
+
+
+
+
+
+                                                                                        
+                                                                                        
+HHHHHHHHH     HHHHHHHHHUUUUUUUU     UUUUUUUUFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+H:::::::H     H:::::::HU::::::U     U::::::UF::::::::::::::::::::FF::::::::::::::::::::F
+H:::::::H     H:::::::HU::::::U     U::::::UF::::::::::::::::::::FF::::::::::::::::::::F
+HH::::::H     H::::::HHUU:::::U     U:::::UUFF::::::FFFFFFFFF::::FFF::::::FFFFFFFFF::::F
+  H:::::H     H:::::H   U:::::U     U:::::U   F:::::F       FFFFFF  F:::::F       FFFFFF
+  H:::::H     H:::::H   U:::::D     D:::::U   F:::::F               F:::::F             
+  H::::::HHHHH::::::H   U:::::D     D:::::U   F::::::FFFFFFFFFF     F::::::FFFFFFFFFF   
+  H:::::::::::::::::H   U:::::D     D:::::U   F:::::::::::::::F     F:::::::::::::::F   
+  H:::::::::::::::::H   U:::::D     D:::::U   F:::::::::::::::F     F:::::::::::::::F   
+  H::::::HHHHH::::::H   U:::::D     D:::::U   F::::::FFFFFFFFFF     F::::::FFFFFFFFFF   
+  H:::::H     H:::::H   U:::::D     D:::::U   F:::::F               F:::::F             
+  H:::::H     H:::::H   U::::::U   U::::::U   F:::::F               F:::::F             
+HH::::::H     H::::::HH U:::::::UUU:::::::U FF:::::::FF           FF:::::::FF           
+H:::::::H     H:::::::H  UU:::::::::::::UU  F::::::::FF           F::::::::FF           
+H:::::::H     H:::::::H    UU:::::::::UU    F::::::::FF           F::::::::FF           
+HHHHHHHHH     HHHHHHHHH      UUUUUUUUU      FFFFFFFFFFF           FFFFFFFFFFF           
+                                                                                        
+                                                                                        
+                                                                                    
+
+
+
+
+
+******* HUFFMAN PRIMITIVES ***************************************************/
 static inline u8 HUF_decode_symbol(const HUF_dtable *const dtable,
                                    u16 *const state, const u8 *const src,
                                    i64 *const offset) {
@@ -1887,11 +2257,13 @@ static inline u8 HUF_decode_symbol(const HUF_dtable *const dtable,
     const u8 symb = dtable->symbols[*state];
     const u8 bits = dtable->num_bits[*state];
     const u16 rest = STREAM_read_bits(src, bits, offset);
+    DBG(DBG_HUFF_DATA, "state=%4d, bits=%2d --> read bits=%3d --> ",*state,bits,rest);
     // Shift `bits` bits out of the state, keeping the low order bits that
     // weren't necessary to determine this symbol.  Then add in the new bits
     // read from the stream.
     *state = ((*state << bits) + rest) & (((u16)1 << dtable->max_bits) - 1);
-
+    //DBG_bits(DBG_HUFF_DATA, rest, bits, dtable->max_bits);
+    DBG(DBG_HUFF_DATA,  "symbol=0x%2x(\'%c\'), new state=%4d\n", symb, CHAR_SAFE(symb),*state);
     return symb;
 }
 
@@ -1901,6 +2273,7 @@ static inline void HUF_init_state(const HUF_dtable *const dtable,
     // Read in a full `dtable->max_bits` bits to initialize the state
     const u8 bits = dtable->max_bits;
     *state = STREAM_read_bits(src, bits, offset);
+     DBG(DBG_HUFF_DATA, "Huff initial state = %d\n", *state);
 }
 
 static size_t HUF_decompress_1stream(const HUF_dtable *const dtable,
@@ -1922,7 +2295,7 @@ static size_t HUF_decompress_1stream(const HUF_dtable *const dtable,
     // final-bit-flag itself is not part of the useful bitstream. Hence, the
     // last byte contains between 0 and 7 useful bits."
     const int padding = 8 - highest_set_bit(src[len - 1]);
-
+    DBG(DBG_HUFF_DATA, "HUFF STREAM: padding = %d, jumping to end of stream\n", padding);
     // Offset starts at the end because HUF streams are read backwards
     i64 bit_offset = len * 8 - padding;
     u16 state;
@@ -1962,7 +2335,7 @@ static size_t HUF_decompress_4stream(const HUF_dtable *const dtable,
     const size_t csize1 = IO_read_bits(in, 16);
     const size_t csize2 = IO_read_bits(in, 16);
     const size_t csize3 = IO_read_bits(in, 16);
-
+    DBG(DBG_HUFF_DATA, "HUF DATA:4 streams, offsets 0,%d,%d,%d\n",csize1,csize2+csize1,csize3+csize2+csize1);
     istream_t in1 = IO_make_sub_istream(in, csize1);
     istream_t in2 = IO_make_sub_istream(in, csize2);
     istream_t in3 = IO_make_sub_istream(in, csize3);
@@ -2046,7 +2419,7 @@ static void HUF_init_dtable(HUF_dtable *const table, const u8 *const bits,
             // the lower bits
             const u16 len = 1 << (max_bits - bits[i]);
             memset(&table->symbols[code], i, len);
-            DBG(DBG_HUFF, "HUFF_TBL[0x%x(\"%c\")]=", table->symbols[code],((table->symbols[code] < 0x20) || (table->symbols[code] > 0x7e))?'.':table->symbols[code]);
+            DBG(DBG_HUFF, "HUFF_TBL[0x%x(\"%c\")]\n", table->symbols[code],CHAR_SAFE(table->symbols[code]));
             DBG_bits(DBG_HUFF, code, bits[i], max_bits);
             DBG(DBG_HUFF, "\n");
             rank_idx[bits[i]] += len;
@@ -2100,9 +2473,43 @@ static void HUF_free_dtable(HUF_dtable *const dtable) {
     free(dtable->num_bits);
     memset(dtable, 0, sizeof(HUF_dtable));
 }
-/******* END HUFFMAN PRIMITIVES ***********************************************/
+/******* END HUFFMAN PRIMITIVES ***********************************************
 
-/******* FSE PRIMITIVES *******************************************************/
+
+
+
+
+
+
+                                                          
+                                                               
+FFFFFFFFFFFFFFFFFFFFFF   SSSSSSSSSSSSSSS EEEEEEEEEEEEEEEEEEEEEE
+F::::::::::::::::::::F SS:::::::::::::::SE::::::::::::::::::::E
+F::::::::::::::::::::FS:::::SSSSSS::::::SE::::::::::::::::::::E
+FF::::::FFFFFFFFF::::FS:::::S     SSSSSSSEE::::::EEEEEEEEE::::E
+  F:::::F       FFFFFFS:::::S              E:::::E       EEEEEE
+  F:::::F             S:::::S              E:::::E             
+  F::::::FFFFFFFFFF    S::::SSSS           E::::::EEEEEEEEEE   
+  F:::::::::::::::F     SS::::::SSSSS      E:::::::::::::::E   
+  F:::::::::::::::F       SSS::::::::SS    E:::::::::::::::E   
+  F::::::FFFFFFFFFF          SSSSSS::::S   E::::::EEEEEEEEEE   
+  F:::::F                         S:::::S  E:::::E             
+  F:::::F                         S:::::S  E:::::E       EEEEEE
+FF:::::::FF           SSSSSSS     S:::::SEE::::::EEEEEEEE:::::E
+F::::::::FF           S::::::SSSSSS:::::SE::::::::::::::::::::E
+F::::::::FF           S:::::::::::::::SS E::::::::::::::::::::E
+FFFFFFFFFFF            SSSSSSSSSSSSSSS   EEEEEEEEEEEEEEEEEEEEEE
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+
+
+
+
+******* FSE PRIMITIVES *******************************************************/
 /// For more description of FSE see
 /// https://github.com/Cyan4973/FiniteStateEntropy/
 
@@ -2200,7 +2607,8 @@ static size_t FSE_decompress_interleaved2(const FSE_dtable *const dtable,
     return symbols_written;
 }
 
-static void FSE_init_dtable(FSE_dtable *const dtable,
+static void FSE_init_dtable(const char* table_name, 
+                            FSE_dtable *const dtable,
                             const i16 *const norm_freqs, const int num_symbs,
                             const int accuracy_log) {
     if (accuracy_log > FSE_MAX_ACCURACY_LOG) {
@@ -2216,6 +2624,8 @@ static void FSE_init_dtable(FSE_dtable *const dtable,
     dtable->symbols = malloc(size * sizeof(u8));
     dtable->num_bits = malloc(size * sizeof(u8));
     dtable->new_state_base = malloc(size * sizeof(u16));
+
+    DBG(DBG_FSE, "FSE TBL: (%s) accuracy_log=%d, size=%d\n",table_name,accuracy_log, size);
 
     if (!dtable->symbols || !dtable->num_bits || !dtable->new_state_base) {
         BAD_ALLOC();
@@ -2273,6 +2683,7 @@ static void FSE_init_dtable(FSE_dtable *const dtable,
     }
 
     // Now we can fill baseline and num bits
+    DBG(DBG_FSE, "FSE TBL:%s[state] <symbols, num_bits, new_state_base>\n", table_name);
     for (size_t i = 0; i < size; i++) {
         u8 symbol = dtable->symbols[i];
         u16 next_state_desc = state_desc[symbol]++;
@@ -2283,12 +2694,13 @@ static void FSE_init_dtable(FSE_dtable *const dtable,
         // it resets to 0
         dtable->new_state_base[i] =
             ((u16)next_state_desc << dtable->num_bits[i]) - size;
+        DBG(DBG_FSE, "%3d(\'%c\') <%2d, %2d, %2d>\n", i,CHAR_SAFE(i),dtable->symbols[i],dtable->num_bits[i],dtable->new_state_base[i]);
     }
 }
 
 /// Decode an FSE header as defined in the Zstandard format specification and
 /// use the decoded frequencies to initialize a decoding table.
-static void FSE_decode_header(FSE_dtable *const dtable, istream_t *const in,
+static void FSE_decode_header(const char* table_name, FSE_dtable *const dtable, istream_t *const in,
                                 const int max_accuracy_log) {
     // "An FSE distribution table describes the probabilities of all symbols
     // from 0 to the last present one (included) on a normalized scale of 1 <<
@@ -2309,6 +2721,7 @@ static void FSE_decode_header(FSE_dtable *const dtable, istream_t *const in,
     if (accuracy_log > max_accuracy_log) {
         ERROR("FSE accuracy too large");
     }
+    DBG(DBG_FSE, "FSE TBL HDR(%s): accuracy_log=%d.\n",table_name, accuracy_log);
 
     // "Then follows each symbol value, from 0 to last present one. The number
     // of bits used by each field is variable. It depends on :
@@ -2356,6 +2769,7 @@ static void FSE_decode_header(FSE_dtable *const dtable, istream_t *const in,
         remaining -= proba < 0 ? -proba : proba;
 
         frequencies[symb] = proba;
+        DBG(DBG_FSE, "FSE TBL HDR(%s): proba[0x%x(%c)]=%d\n", table_name,symb, CHAR_SAFE(symb),  frequencies[symb]);
         symb++;
 
         // "When a symbol has a probability of zero, it is followed by a 2-bits
@@ -2369,6 +2783,7 @@ static void FSE_decode_header(FSE_dtable *const dtable, istream_t *const in,
             while (1) {
                 for (int i = 0; i < repeat && symb < FSE_MAX_SYMBS; i++) {
                     frequencies[symb++] = 0;
+                    DBG(DBG_FSE, "FSE TBL HDR (%s): proba[0x%x(%c)]=%d\n",table_name, symb, CHAR_SAFE(symb),  frequencies[symb]);
                 }
                 if (repeat == 3) {
                     repeat = IO_read_bits(in, 2);
@@ -2388,7 +2803,7 @@ static void FSE_decode_header(FSE_dtable *const dtable, istream_t *const in,
     }
 
     // Initialize the decoding table using the determined weights
-    FSE_init_dtable(dtable, frequencies, symb, accuracy_log);
+    FSE_init_dtable(table_name, dtable, frequencies, symb, accuracy_log);
 }
 
 static void FSE_init_dtable_rle(FSE_dtable *const dtable, const u8 symb) {

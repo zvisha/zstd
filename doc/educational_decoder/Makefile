@@ -20,14 +20,14 @@ endif
 HARNESS_FILES=*.c
 
 MULTITHREAD_LDFLAGS = -pthread
-DEBUGFLAGS= -g -DZSTD_DEBUG=1
+DEBUGFLAGS= -g -DZSTD_DEBUG=1 
 CPPFLAGS += -I$(ZSTDDIR) -I$(ZSTDDIR)/common -I$(ZSTDDIR)/compress \
             -I$(ZSTDDIR)/dictBuilder -I$(ZSTDDIR)/deprecated -I$(PRGDIR)
 CFLAGS   ?= -O2
 CFLAGS   += -Wall -Wextra -Wcast-qual -Wcast-align -Wshadow                 \
-            -Wstrict-aliasing=1 -Wswitch-enum                               \
+            -Wstrict-aliasing=1 -Wswitch-enum   -Wno-format-extra-args -Wno-format                            \
             -Wredundant-decls -Wstrict-prototypes -Wundef                   \
-            -Wvla -Wformat=2 -Winit-self -Wfloat-equal -Wwrite-strings      \
+            -Wvla -Wformat=0 -Winit-self -Wfloat-equal -Wwrite-strings      \
             -std=c99
 CFLAGS   += $(DEBUGFLAGS)
 CFLAGS   += $(MOREFLAGS)
