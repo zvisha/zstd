@@ -2,7 +2,10 @@
     "files.associations": {
         "zstd_deps.h": "c",
         "stdio.h": "c",
-        "system_error": "c"
+        "system_error": "c",
+        "zstd.h": "c",
+        "stdlib.h": "c",
+        "zstd_decompress.h": "c"
     },
     "makefile.launchConfigurations": [
         {

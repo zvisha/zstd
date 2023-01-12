@@ -98,7 +98,7 @@ void DBGMEM(int b_print,char *desc, const void *addr, unsigned int len)
 			}
         } else {
 	    if ((i % 4) == 0) {
-	    	DBG(1, "  ");
+	    	DBG(1, " ");
 	    }
 	}
 
@@ -125,7 +125,7 @@ void DBGMEM(int b_print,char *desc, const void *addr, unsigned int len)
     }
 
     // And print the final ASCII bit.
-    DBG(1, "  ");
+    DBG(1, "   ");
 	DBG(1, "%s", buff);
     DBG(1, "\n");
 }

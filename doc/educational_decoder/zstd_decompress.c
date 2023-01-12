@@ -36,10 +36,11 @@
 
 #define DBG_ENABLE 1
 
-void DBGMEM(int b_print, const char *desc, const void *addr, unsigned int len);
+static void DBGMEM(int b_print, const char *desc, const void *addr, unsigned int len);
 #define DBG(X,...) do {if (X) printf(__VA_ARGS__);} while(0)
 #define DBGN(X,...) if (X) {DBG(X, __VA_ARGS__); DBG(X, "\n");}
 
+#define DBG_IN_AND_OUT_FRAMES_WHOLE           (1 && DBG_ENABLE)
 #define DBG_PARSING           (1 && DBG_ENABLE)
 #define DBG_BLOCK_DATA        (1 && DBG_ENABLE)
 #define DBG_EXTRA             (1 && DBG_ENABLE)
@@ -104,7 +105,7 @@ typedef int64_t i64;
 /*** IO STREAM OPERATIONS *************/
 
 /// ostream_t/istream_t are used to wrap the pointers/length data passed into
-/// ZSTD_decompress, so that all IO operations are safely bounds checked
+/// ZSTD_decompress_simple, so that all IO operations are safely bounds checked
 /// They are written/read forward, and reads are treated as little-endian
 /// They should be used opaquely to ensure safety
 typedef struct {
@@ -442,7 +443,7 @@ ZZZZZZZZZZZZZZZZZZZ            VVV            IIIIIIIIII
 
 
 /******* ZVI`s FUNCTIONS *******************************/
-void DBGMEM(int b_print,const char *desc, const void *addr, unsigned int len)
+static void DBGMEM(int b_print,const char *desc, const void *addr, unsigned int len)
 {
     unsigned int i;
     char buff[17];
@@ -488,20 +489,20 @@ void DBGMEM(int b_print,const char *desc, const void *addr, unsigned int len)
     while ((i % 16) != 0) {
         DBG(1, "   ");
 	    if ((i % 4) == 0) {
-		   DBG(1, " ");
+		   DBG(1, "  ");
 		}
         i++;
     }
 
     // And print the final ASCII bit.
-    DBG(1, "  ");
+    DBG(1, "   ");
 	DBG(1, "%s", buff);
     DBG(1, "\n");
 }
 
 
 
-void DBG_bits(int b_print, u32 number, u32 bits, u32 tableLog) {
+static void DBG_bits(int b_print, u32 number, u32 bits, u32 tableLog) {
     // per bit print 0 or 1
     if (b_print) {
         //DBG(1, "(%x)",number);
@@ -511,16 +512,20 @@ void DBG_bits(int b_print, u32 number, u32 bits, u32 tableLog) {
     }
 }
 
-size_t ZSTD_decompress(void *const dst, const size_t dst_len,
+size_t ZSTD_decompress_simple(void *const dst, const size_t dst_len,
                        const void *const src, const size_t src_len) {
     dictionary_t* const uninit_dict = create_dictionary();
     DBG(DBG_PARSING, "***************************************************\n");
     DBG(DBG_PARSING, "***************************************************\n");
-    DBG(DBG_PARSING, "Decompress frame src=%p(%zu bytes), dst=%p(%zu bytes)\n",src,src_len,dst,dst_len);
+    DBG(DBG_PARSING, "Decompress frame src=%p(%zu bytes), dst=%p(max buffer size %zu bytes)\n",src,src_len,dst,dst_len);
     DBG(DBG_PARSING, "***************************************************\n");
     DBG(DBG_PARSING, "***************************************************\n");
+
+    DBGMEM(DBG_IN_AND_OUT_FRAMES_WHOLE, "whole COMPRESSED frame:", src, src_len);
+
     size_t const decomp_size = ZSTD_decompress_with_dict(dst, dst_len, src,
                                                          src_len, uninit_dict);
+    DBGMEM(DBG_IN_AND_OUT_FRAMES_WHOLE, "UNCOMPRESSED data", dst, decomp_size);                                                         
     free_dictionary(uninit_dict);
     return decomp_size;
 }
@@ -691,7 +696,7 @@ static void parse_frame_header(frame_header_t *const header,
     const u8 content_checksum_flag = (descriptor >> 2) & 1;
     const u8 dictionary_id_flag = descriptor & 3;
 
-    DBG(DBG_PARSING, "frame_content_size_flag=%d, single_segment_flag=%d, content_checksum_flag=%d, dictionary_id_flag=%d\n",
+    DBG(DBG_PARSING, "frame_content_size_flag=0x%x, single_segment_flag=0x%x, content_checksum_flag=0x%x, dictionary_id_flag=0x%x\n",
     frame_content_size_flag, single_segment_flag, content_checksum_flag, dictionary_id_flag);
 
     if (reserved_bit != 0) {
@@ -712,13 +717,13 @@ static void parse_frame_header(frame_header_t *const header,
         u8 window_descriptor = (u8)IO_read_bits(in, 8);
         u8 exponent = window_descriptor >> 3;
         u8 mantissa = window_descriptor & 7;
-        DBG(DBG_PARSING, "window_descriptor: exponent=%d, mantissa=%d\n",exponent,mantissa);
+        DBG(DBG_PARSING, "window_descriptor: exponent=0x%x, mantissa=0x%x\n",exponent,mantissa);
         // Use the algorithm from the specification to compute window size
         // https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#window_descriptor
         size_t window_base = (size_t)1 << (10 + exponent);
         size_t window_add = (window_base / 8) * mantissa;
         header->window_size = window_base + window_add;
-        DBG(DBG_PARSING, "window_descriptor: exponent=%d, mantissa=%d, window_base=%zu, window_add=%d\n",exponent, mantissa,  window_base, window_add);
+        DBG(DBG_PARSING, "window_descriptor: exponent=0x%x, mantissa=0x%x, window_base=%zu, window_add=0x%x\n",exponent, mantissa,  window_base, window_add);
     }
     DBG(DBG_PARSING, "window_descriptor: window_size=%zu\n", header->window_size);
     
@@ -734,7 +739,7 @@ static void parse_frame_header(frame_header_t *const header,
     } else {
         header->dictionary_id = 0;
     }
-    DBG(DBG_PARSING, "dictionary_id=%d\n",header->dictionary_id);
+    DBG(DBG_PARSING, "dictionary_id=0x%x\n",header->dictionary_id);
 
     // decode frame content size if it exists
     if (single_segment_flag || frame_content_size_flag) {
@@ -756,7 +761,7 @@ static void parse_frame_header(frame_header_t *const header,
     } else {
         header->frame_content_size = 0;
     }
-    DBG(DBG_PARSING, "frame_content_size=%d\n",header->frame_content_size);
+    DBG(DBG_PARSING, "frame_content_size=0x%x\n",header->frame_content_size);
 
     if (single_segment_flag) {
         // "The Window_Descriptor byte is optional. It is absent when
@@ -765,7 +770,7 @@ static void parse_frame_header(frame_header_t *const header,
         // 2^64-1 bytes (16 EB)."
         header->window_size = header->frame_content_size;
     }
-    DBG(DBG_PARSING, "window_size=%d\n",header->frame_content_size);
+    DBG(DBG_PARSING, "window_size=0x%x\n",header->frame_content_size);
 }
 
 /// Decompress the data from a frame block by block
@@ -791,8 +796,8 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
         last_block = (int)IO_read_bits(in, 1);
         const int block_type = (int)IO_read_bits(in, 2);
         const size_t block_len = IO_read_bits(in, 21);
-        DBG(DBG_PARSING, "block_type=%d (Raw_Block/RLE_Block/Compressed_Block/Reserved)\n",block_type);
-        DBG(DBG_PARSING, "block_len=%d\n",block_len);
+        DBG(DBG_PARSING, "block_type=0x%x (Raw_Block/RLE_Block/Compressed_Block/Reserved)\n",block_type);
+        DBG(DBG_PARSING, "block_len=0x%x\n",block_len);
         switch (block_type) {
         case 0: {
             // "Raw_Block - this is an uncompressed block. Block_Size is the
@@ -802,7 +807,7 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
 
             // Copy the raw data into the output
             memcpy(write_ptr, read_ptr, block_len);
-            DBG(DBG_PARSING, "Raw block, copy %d bytes\n",block_len);
+            DBG(DBG_PARSING, "Raw block, copy 0x%x bytes\n",block_len);
             DBGMEM(DBG_BLOCK_DATA, NULL,write_ptr, block_len);
             ctx->current_total_output += block_len;
             break;
@@ -816,7 +821,7 @@ static void decompress_data(frame_context_t *const ctx, ostream_t *const out,
 
             // Copy `block_len` copies of `read_ptr[0]` to the output
             memset(write_ptr, read_ptr[0], block_len);
-            DBG(DBG_PARSING, "RLE block, memset %d bytes\n",block_len);
+            DBG(DBG_PARSING, "RLE block, memset 0x%x bytes\n",block_len);
             DBGMEM(DBG_BLOCK_DATA, NULL, write_ptr, block_len);
             ctx->current_total_output += block_len;
             break;
@@ -952,7 +957,7 @@ static size_t decode_literals(frame_context_t *const ctx, istream_t *const in,
     int block_type = (int)IO_read_bits(in, 2);
     int size_format = (int)IO_read_bits(in, 2);
     DBG(DBG_LITERALS, "******************************************************************************************\n");
-    DBG(DBG_LITERALS, "* LIT: block_type=%d(0=raw,1=rle,2=compressed,3=repeat), size_format=%d()\n",block_type, size_format);
+    DBG(DBG_LITERALS, "* LIT: block_type=0x%x(0=raw,1=rle,2=compressed,3=repeat), size_format=0x%x()\n",block_type, size_format);
     DBG(DBG_LITERALS, "******************************************************************************************\n");
     if (block_type <= 1) {
         // Raw or RLE literals block
@@ -991,7 +996,7 @@ static size_t decode_literals_simple(istream_t *const in, u8 **const literals,
         // Size format is in range 0-3
         IMPOSSIBLE();
     }
-    DBG(DBG_LITERALS, "LIT: size=%d\n",size);
+    DBG(DBG_LITERALS, "LIT: size=0x%x\n",size);
     if (size > MAX_LITERALS_SIZE) {
         CORRUPTION();
     }
@@ -1006,7 +1011,7 @@ static size_t decode_literals_simple(istream_t *const in, u8 **const literals,
         // "Raw_Literals_Block - Literals are stored uncompressed."
         const u8 *const read_ptr = IO_get_read_ptr(in, size);
         memcpy(*literals, read_ptr, size);
-        DBG(DBG_LITERALS, "LIT: raw data, size=%d\n",size);
+        DBG(DBG_LITERALS, "LIT: raw data, size=0x%x\n",size);
         DBGMEM(DBG_LITERALS_DATA, NULL, *literals, size);
         break;
     }
@@ -1014,7 +1019,7 @@ static size_t decode_literals_simple(istream_t *const in, u8 **const literals,
         // "RLE_Literals_Block - Literals consist of a single byte value repeated N times."
         const u8 *const read_ptr = IO_get_read_ptr(in, 1);
         memset(*literals, read_ptr[0], size);
-        DBG(DBG_LITERALS, "LIT: RLE data, size=%d\n",size);
+        DBG(DBG_LITERALS, "LIT: RLE data, size=0x%x\n",size);
         DBGMEM(DBG_LITERALS_DATA, NULL, *literals, size);
         break;
     }
@@ -1066,7 +1071,7 @@ static size_t decode_literals_compressed(frame_context_t *const ctx,
     if (regenerated_size > MAX_LITERALS_SIZE) {
         CORRUPTION();
     }
-    DBG(DBG_LITERALS, "LIT: Compressed literals (by huff), decompressed size=%d\n",regenerated_size);
+    DBG(DBG_LITERALS, "LIT: Compressed literals (by huff), decompressed size=0x%x\n",regenerated_size);
     //DBGMEM(DBG_LITERALS_DATA, "LIT rle data", *literals, size);
 
     *literals = malloc(regenerated_size);
@@ -1091,14 +1096,14 @@ static size_t decode_literals_compressed(frame_context_t *const ctx,
             CORRUPTION();
         }
     }
-    DBG(DBG_LITERALS, "LIT HUFF: Huff table availible, decoding %d streams\n", num_streams);
+    DBG(DBG_LITERALS, "LIT HUFF: Huff table availible, decoding 0x%x streams\n", num_streams);
     size_t symbols_decoded;
     if (num_streams == 1) {
         symbols_decoded = HUF_decompress_1stream(&ctx->literals_dtable, &lit_stream, &huf_stream);
     } else {
         symbols_decoded = HUF_decompress_4stream(&ctx->literals_dtable, &lit_stream, &huf_stream);
     }
-    DBG(DBG_LITERALS, "LIT HUFF: decoded %d symbols\n", symbols_decoded);
+    DBG(DBG_LITERALS, "LIT HUFF: decoded 0x%x symbols\n", symbols_decoded);
     if (symbols_decoded != regenerated_size) {
         CORRUPTION();
     }
@@ -1118,7 +1123,7 @@ static void decode_huf_table(HUF_dtable *const dtable, istream_t *const in) {
     memset(weights, 0, sizeof(weights));
 
     int num_symbs;
-    DBG(DBG_LITERALS, "LIT TBL: Header length=%d\n",header);
+    DBG(DBG_LITERALS, "LIT TBL: Header length=0x%x\n",header);
     if (header >= 128) {
         // "This is a direct representation, where each Weight is written
         // directly as a 4 bits field (0-15). The full representation occupies
@@ -1128,7 +1133,7 @@ static void decode_huf_table(HUF_dtable *const dtable, istream_t *const in) {
         num_symbs = header - 127;
         const size_t bytes = (num_symbs + 1) / 2;
         const u8 *const weight_src = IO_get_read_ptr(in, bytes);
-        DBG(DBG_LITERALS, "LIT TBL: No FSE encoding, num_symbs=%d, encoded length=%d\n",num_symbs, bytes);
+        DBG(DBG_LITERALS, "LIT TBL: No FSE encoding, num_symbs=0x%x, encoded length=0x%x\n",num_symbs, bytes);
         DBGMEM(DBG_LITERALS_DATA, "LIT TBL: literals huff weights table",weight_src, bytes);
         for (int i = 0; i < num_symbs; i++) {
             // "They are encoded forward, 2
@@ -1141,7 +1146,7 @@ static void decode_huf_table(HUF_dtable *const dtable, istream_t *const in) {
             } else {
                 weights[i] = weight_src[i / 2] & 0xf;
             }
-            DBG(DBG_LITERALS, "weights[%i(%c)]=%d\n",i,CHAR_SAFE(i), weights[i]);
+            DBG(DBG_LITERALS, "weights[%i(%c)]=0x%x\n",i,CHAR_SAFE(i), weights[i]);
         }
     } else {
         // The weights are FSE encoded, decode them before we can construct the
@@ -1165,7 +1170,7 @@ static void fse_decode_hufweights(ostream_t *weights, istream_t *const in,
     // "An FSE bitstream starts by a header, describing probabilities
     // distribution. It will create a Decoding Table. For a list of Huffman
     // weights, maximum accuracy is 7 bits."
-    DBG(DBG_LITERALS, "LIT TBL: FSE decoding, MAX_ACCURACY_LOG=%d.\n", MAX_ACCURACY_LOG);
+    DBG(DBG_LITERALS, "LIT TBL: FSE decoding, MAX_ACCURACY_LOG=0x%x.\n", MAX_ACCURACY_LOG);
     FSE_decode_header("huff-tbl",&dtable, in, MAX_ACCURACY_LOG);
 
     // Decode the weights
@@ -1308,7 +1313,7 @@ static size_t decode_sequences(frame_context_t *const ctx, istream_t *in,
         num_sequences = IO_read_bits(in, 16) + 0x7F00;
     }
 
-    DBG(DBG_SEQUENCES, "num_sequences = %d\n",num_sequences);
+    DBG(DBG_SEQUENCES, "num_sequences = 0x%x\n",num_sequences);
 
     
 
@@ -1353,7 +1358,7 @@ static void decompress_sequences(frame_context_t *const ctx, istream_t *in,
     // Offsets
     // Match Lengths"
     // Update the tables we have stored in the context
-    DBG(DBG_SEQUENCES, "ll type=%d, of type=%d, ml type=%d (seq_predefined = 0, seq_rle = 1, seq_fse = 2, repeat = 3)\n"
+    DBG(DBG_SEQUENCES, "ll type=0x%x, of type=0x%x, ml type=0x%x (seq_predefined = 0, seq_rle = 1, seq_fse = 2, repeat = 3)\n"
                         ,num_sequences,(compression_modes >> 6) & 3,(compression_modes >> 4) & 3,(compression_modes >> 2) & 3);
 
     decode_seq_table("ll",&ctx->ll_dtable, in, seq_literal_length,
@@ -1463,7 +1468,7 @@ static void decode_seq_table(const char* table_name,FSE_dtable *const table, ist
     const size_t default_distribution_accuracies[] = {6, 5, 6};
 
     const size_t max_accuracies[] = {9, 8, 9};
-    DBG(DBG_SEQUENCES, "SEQ: decode seq table, mode=%d (predefined, RLE, FSE, repeat)\n",mode);
+    DBG(DBG_SEQUENCES, "SEQ: decode seq table, mode=0x%x (predefined, RLE, FSE, repeat)\n",mode);
     if (mode != seq_repeat) {
         // Free old one before overwriting
         FSE_free_dtable(table);
@@ -1561,7 +1566,7 @@ static void execute_sequences(frame_context_t *const ctx, ostream_t *const out,
         const sequence_command_t seq = sequences[i];
         {
             const u32 literals_size = copy_literals(seq.literal_length, &litstream, out);
-            DBG(DBG_LZ77, "LZ77: LITTERALS COPY %d bytes.\n", literals_size);
+            DBG(DBG_LZ77, "LZ77: LITTERALS COPY 0x%x bytes.\n", literals_size);
             DBGMEM(DBG_LZ77_DATA, NULL, last_data ,literals_size);
             last_data = out->ptr;
             total_output += literals_size;
@@ -1573,7 +1578,7 @@ static void execute_sequences(frame_context_t *const ctx, ostream_t *const out,
 
         execute_match_copy(ctx, offset, match_length, total_output, out);
         
-        DBG(DBG_LZ77, "LZ77: MATCH COPY %d bytes.\n", match_length);
+        DBG(DBG_LZ77, "LZ77: MATCH COPY 0x%x bytes.\n", match_length);
         DBGMEM(DBG_LZ77_DATA, NULL, last_data ,match_length);
         //last_data = out->ptr;
         total_output += match_length;
@@ -2273,7 +2278,7 @@ static inline void HUF_init_state(const HUF_dtable *const dtable,
     // Read in a full `dtable->max_bits` bits to initialize the state
     const u8 bits = dtable->max_bits;
     *state = STREAM_read_bits(src, bits, offset);
-     DBG(DBG_HUFF_DATA, "Huff initial state = %d\n", *state);
+     DBG(DBG_HUFF_DATA, "Huff initial state = 0x%x\n", *state);
 }
 
 static size_t HUF_decompress_1stream(const HUF_dtable *const dtable,
@@ -2295,7 +2300,7 @@ static size_t HUF_decompress_1stream(const HUF_dtable *const dtable,
     // final-bit-flag itself is not part of the useful bitstream. Hence, the
     // last byte contains between 0 and 7 useful bits."
     const int padding = 8 - highest_set_bit(src[len - 1]);
-    DBG(DBG_HUFF_DATA, "HUFF STREAM: padding = %d, jumping to end of stream\n", padding);
+    DBG(DBG_HUFF_DATA, "HUFF STREAM: padding = 0x%x, jumping to end of stream\n", padding);
     // Offset starts at the end because HUF streams are read backwards
     i64 bit_offset = len * 8 - padding;
     u16 state;
@@ -2335,7 +2340,7 @@ static size_t HUF_decompress_4stream(const HUF_dtable *const dtable,
     const size_t csize1 = IO_read_bits(in, 16);
     const size_t csize2 = IO_read_bits(in, 16);
     const size_t csize3 = IO_read_bits(in, 16);
-    DBG(DBG_HUFF_DATA, "HUF DATA:4 streams, offsets 0,%d,%d,%d\n",csize1,csize2+csize1,csize3+csize2+csize1);
+    DBG(DBG_HUFF_DATA, "HUF DATA:4 streams, offsets 0,0x%x,0x%x,0x%x\n",csize1,csize2+csize1,csize3+csize2+csize1);
     istream_t in1 = IO_make_sub_istream(in, csize1);
     istream_t in2 = IO_make_sub_istream(in, csize2);
     istream_t in3 = IO_make_sub_istream(in, csize3);
@@ -2625,7 +2630,7 @@ static void FSE_init_dtable(const char* table_name,
     dtable->num_bits = malloc(size * sizeof(u8));
     dtable->new_state_base = malloc(size * sizeof(u16));
 
-    DBG(DBG_FSE, "FSE TBL: (%s) accuracy_log=%d, size=%d\n",table_name,accuracy_log, size);
+    DBG(DBG_FSE, "FSE TBL: (%s) accuracy_log=0x%x, size=0x%x\n",table_name,accuracy_log, size);
 
     if (!dtable->symbols || !dtable->num_bits || !dtable->new_state_base) {
         BAD_ALLOC();
@@ -2721,7 +2726,7 @@ static void FSE_decode_header(const char* table_name, FSE_dtable *const dtable, 
     if (accuracy_log > max_accuracy_log) {
         ERROR("FSE accuracy too large");
     }
-    DBG(DBG_FSE, "FSE TBL HDR(%s): accuracy_log=%d.\n",table_name, accuracy_log);
+    DBG(DBG_FSE, "FSE TBL HDR(%s): accuracy_log=0x%x.\n",table_name, accuracy_log);
 
     // "Then follows each symbol value, from 0 to last present one. The number
     // of bits used by each field is variable. It depends on :
@@ -2769,7 +2774,7 @@ static void FSE_decode_header(const char* table_name, FSE_dtable *const dtable, 
         remaining -= proba < 0 ? -proba : proba;
 
         frequencies[symb] = proba;
-        DBG(DBG_FSE, "FSE TBL HDR(%s): proba[0x%x(%c)]=%d\n", table_name,symb, CHAR_SAFE(symb),  frequencies[symb]);
+        DBG(DBG_FSE, "FSE TBL HDR(%s): proba[0x%x(%c)]=0x%x\n", table_name,symb, CHAR_SAFE(symb),  frequencies[symb]);
         symb++;
 
         // "When a symbol has a probability of zero, it is followed by a 2-bits
@@ -2783,7 +2788,7 @@ static void FSE_decode_header(const char* table_name, FSE_dtable *const dtable, 
             while (1) {
                 for (int i = 0; i < repeat && symb < FSE_MAX_SYMBS; i++) {
                     frequencies[symb++] = 0;
-                    DBG(DBG_FSE, "FSE TBL HDR (%s): proba[0x%x(%c)]=%d\n",table_name, symb, CHAR_SAFE(symb),  frequencies[symb]);
+                    DBG(DBG_FSE, "FSE TBL HDR (%s): proba[0x%x(%c)]=0x%x\n",table_name, symb, CHAR_SAFE(symb),  frequencies[symb]);
                 }
                 if (repeat == 3) {
                     repeat = IO_read_bits(in, 2);

@@ -34,7 +34,7 @@ PRGDIR  = ../programs
 PYTHON ?= python3
 TESTARTEFACT := versionsTest
 
-DEBUGFLAGS += -g -Wno-c++-compat
+DEBUGFLAGS += -g -O0 -Wno-c++-compat -Wno-unused-function -Wno-declaration-after-statement -Wno-unused-parameter
 CPPFLAGS   += -I$(ZSTDDIR) -I$(ZSTDDIR)/common -I$(ZSTDDIR)/compress \
               -I$(ZSTDDIR)/dictBuilder -I$(ZSTDDIR)/deprecated -I$(PRGDIR) \
               -DZSTD_WINDOW_OVERFLOW_CORRECT_FREQUENTLY=1
@@ -77,7 +77,7 @@ ZSTDRTTEST = --test-large-data
 DECODECORPUS_TESTTIME ?= -T30
 
 .PHONY: default
-default: fullbench
+default: fullbench 
 
 .PHONY: all
 all: fullbench fuzzer zstreamtest paramgrill datagen decodecorpus roundTripCrash poolTests
@@ -228,8 +228,8 @@ legacy : CPPFLAGS += -I$(ZSTDDIR)/legacy -UZSTD_LEGACY_SUPPORT -DZSTD_LEGACY_SUP
 legacy : $(ZSTD_FILES) $(sort $(wildcard $(ZSTDDIR)/legacy/*.c)) legacy.c
 
 CLEAN += decodecorpus
-decodecorpus : LDLIBS += -lm
-decodecorpus : $(filter-out zstdc_zstd_compress.o, $(ZSTD_OBJECTS)) $(ZDICT_FILES) $(PRGDIR)/util.c $(PRGDIR)/timefn.c decodecorpus.c
+decodecorpus : LDLIBS += -lm -g -O0 -Wno-format-extra-args -Wno-format   
+decodecorpus : $(filter-out zstdc_zstd_compress.o, $(ZSTD_OBJECTS)) $(ZDICT_FILES) $(PRGDIR)/util.c $(PRGDIR)/timefn.c decodecorpus.c /home/zvi/zstd2/zstd/doc/educational_decoder/zstd_decompress.c
 
 CLEAN += poolTests
 poolTests : $(PRGDIR)/util.c $(PRGDIR)/timefn.c poolTests.c $(ZSTDDIR)/common/pool.c $(ZSTDDIR)/common/threading.c $(ZSTDDIR)/common/zstd_common.c $(ZSTDDIR)/common/error_private.c

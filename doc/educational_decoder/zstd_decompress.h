@@ -21,7 +21,7 @@ typedef struct dictionary_s dictionary_t;
 /******* DECOMPRESSION FUNCTIONS **********************************************/
 /// Zstandard decompression functions.
 /// `dst` must point to a space at least as large as the reconstructed output.
-size_t ZSTD_decompress(void *const dst, const size_t dst_len,
+size_t ZSTD_decompress_simple(void *const dst, const size_t dst_len,
                     const void *const src, const size_t src_len);
 
 /// If `dict != NULL` and `dict_len >= 8`, does the same thing as
