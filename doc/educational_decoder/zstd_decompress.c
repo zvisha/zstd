@@ -1360,7 +1360,7 @@ static void decompress_sequences(frame_context_t *const ctx, istream_t *in,
     // Offsets
     // Match Lengths"
     // Update the tables we have stored in the context
-     DBG(DBG_SV |DBG_SEQUENCES, "ll type=0x%x, of type=0x%x, ml type=0x%x (seq_predefined = 0, seq_rle = 1, seq_fse = 2, repeat = 3)\n"
+     DBG(DBG_SV |DBG_SEQUENCES, "num seq: 0x%x, ll type=0x%x, of type=0x%x, ml type=0x%x (seq_predefined = 0, seq_rle = 1, seq_fse = 2, repeat = 3)\n"
                         ,num_sequences,(compression_modes >> 6) & 3,(compression_modes >> 4) & 3,(compression_modes >> 2) & 3);
 
     decode_seq_table("ll",&ctx->ll_dtable, in, seq_literal_length,
