@@ -249,6 +249,7 @@ size_t HUF_writeCTable_wksp(void* dst, size_t maxDstSize,
 
     /* attempt weights compression by FSE */
     if (maxDstSize < 1) return ERROR(dstSize_tooSmall);
+    //DBG(OLD_DBG, "random: FSE encode HUF table because maxDstSize=%d\n", maxDstSize);
     {   CHECK_V_F(hSize, HUF_compressWeights(op+1, maxDstSize-1, wksp->huffWeight, maxSymbolValue, &wksp->wksp, sizeof(wksp->wksp)) );
         if ((hSize>1) & (hSize < maxSymbolValue/2)) {   /* FSE compressed */
             op[0] = (BYTE)hSize;
@@ -256,6 +257,7 @@ size_t HUF_writeCTable_wksp(void* dst, size_t maxDstSize,
     }   }
 
     /* write raw values as 4-bits (max : 15) */
+    //DBG(OLD_DBG, "random: RAW HUF table because maxDstSize=%d\n", maxDstSize);
     if (maxSymbolValue > (256-128)) return ERROR(GENERIC);   /* should not happen : likely means source cannot be compressed */
     if (((maxSymbolValue+1)/2) + 1 > maxDstSize) return ERROR(dstSize_tooSmall);   /* not enough space within dst buffer */
     op[0] = (BYTE)(128 /*special case*/ + (maxSymbolValue-1));

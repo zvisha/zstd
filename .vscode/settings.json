@@ -5,7 +5,8 @@
         "system_error": "c",
         "zstd.h": "c",
         "stdlib.h": "c",
-        "zstd_decompress.h": "c"
+        "zstd_decompress.h": "c",
+        "type_traits": "c"
     },
     "makefile.launchConfigurations": [
         {

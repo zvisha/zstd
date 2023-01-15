@@ -1,6 +1,6 @@
 Compile:
 cd tests
-make decodecorpus
+make decodecorpus -j 8
 
 Execute:
 ./decodecorpus -t -s<seed>

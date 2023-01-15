@@ -37,12 +37,7 @@
 #define DBG(X,...) do {if (X) printf(__VA_ARGS__);} while(0)
 #define DBGN(X,...) if (X) {DBG(X, __VA_ARGS__); DBG(X, "\n");}
 
-#define OLD3           (1 && DBG_ENABLE)
-#define OLD4           (1 && DBG_ENABLE)
-#define OLD5           (1 && DBG_ENABLE)
-#define OLD6           (1 && DBG_ENABLE)
-#define OLD7           (1 && DBG_ENABLE)
-#define OLD8           (1 && DBG_ENABLE)
+#define OLD_DBG           (1 && DBG_ENABLE)
 
 #ifndef MIN
     #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -289,6 +284,8 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
         /* Follow window algorithm from specification */
         int const exponent = RAND(seed) % (MAX_WINDOW_LOG - 10);
         int const mantissa = RAND(seed) % 8;
+        DBG(OLD_DBG, "random exponent:0x%x\n", exponent);
+        DBG(OLD_DBG, "random mantissa:0x%x\n", mantissa);
         windowByte = (BYTE) ((exponent << 3) | mantissa);
         fh.windowSize = (1U << (exponent + 10));
         fh.windowSize += fh.windowSize / 8 * mantissa;
@@ -308,6 +305,7 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
             highBit = 0;
         }
         fh.contentSize = highBit ? highBit + (RAND(seed) % highBit) : 0;
+        DBG(OLD_DBG, "random contentSize:0x%x\n", fh.contentSize);
 
         /* provide size sometimes */
         contentSizeFlag = opts.contentSize | (RAND(seed) & 1);
@@ -316,6 +314,9 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
             /* do single segment sometimes */
             fh.windowSize = (U32) fh.contentSize;
             singleSegment = 1;
+            DBG(OLD_DBG, "random singleSegment (no windowSize)\n");
+        } else {
+            
         }
     }
 
@@ -329,6 +330,7 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
         }
         fcsCode = minFcsCode + (RAND(seed) % (4 - minFcsCode));
         if (fcsCode == 1 && fh.contentSize < 256) fcsCode++;
+        DBG(OLD_DBG, "random not singleSegment, fcsCode (field size)=0x%x\n",fcsCode);
     }
 
     /* write out the header */
@@ -353,6 +355,7 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
         op[pos++] = windowByte;
     }
     if (info.useDict) {
+        DBG(OLD_DBG, "using dictionary: dictID=0x%x\n",info.dictID);
         MEM_writeLE32(op + pos, (U32) info.dictID);
         pos += 4;
     }
@@ -365,11 +368,6 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
         case 3: MEM_writeLE64(op + pos, (U64) fh.contentSize); pos += 8; break;
         }
     }
-
-    DBG(OLD3, " frame content size:\t0x%x\n", (unsigned)fh.contentSize);
-    DBG(OLD3, " frame window size:\t0x%x\n", fh.windowSize);
-    DBG(OLD3, " content size flag:\t%d\n", contentSizeFlag);
-    DBG(OLD3, " single segment flag:\t%d\n", singleSegment);
 
     frame->data = op + pos;
     frame->header = fh;
@@ -396,6 +394,7 @@ static size_t writeLiteralsBlockSimple(U32* seed, frame_t* frame, size_t content
     }
 
     litSize = RAND(seed) % (maxLitSize + 1);
+    DBG(OLD_DBG, "  random: litSize=0x%x\n", litSize);
     if (frame->src == frame->srcStart && litSize == 0) {
         litSize = 1; /* no empty literals if there's nothing preceding this block */
     }
@@ -419,17 +418,14 @@ static size_t writeLiteralsBlockSimple(U32* seed, frame_t* frame, size_t content
 
     if (type == 0) {
         /* Raw literals */
-        DBG(OLD4, "   raw literals\n");
-
+        DBG(OLD_DBG, "  random: filling RAW literals\n");
         RAND_buffer(seed, LITERAL_BUFFER, litSize);
         memcpy(op, LITERAL_BUFFER, litSize);
         op += litSize;
     } else {
         /* RLE literals */
         BYTE const symb = (BYTE) (RAND(seed) % 256);
-
-        DBG(OLD4, "   rle literals: 0x%02x\n", (unsigned)symb);
-
+         DBG(OLD_DBG, "  random: filling RLE literals , symbol=0x%x\n", (unsigned)symb);
         memset(LITERAL_BUFFER, symb, litSize);
         op[0] = symb;
         op++;
@@ -462,7 +458,7 @@ static size_t writeHufHeader(U32* seed, HUF_CElt* hufTable, void* dst, size_t ds
     /* Build Huffman Tree */
     /* Max Huffman log is 11, min is highbit(maxSymbolValue)+1 */
     huffLog = RAND_range(seed, ZSTD_highbit32(maxSymbolValue)+1, huffLog+1);
-    DBG(OLD6, "     huffman log: 0x%x\n", huffLog);
+    DBG(OLD_DBG, "  random: huffLog 0x%x\n",huffLog);
     {   size_t const maxBits = HUF_buildCTable_wksp (hufTable, count, maxSymbolValue, huffLog, WKSP, sizeof(WKSP));
         CHECKERR(maxBits);
         huffLog = (U32)maxBits;
@@ -497,8 +493,7 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
         return ERROR(GENERIC);
     }
 
-    DBG(OLD4, "   compressed literals\n");
-
+    DBG(OLD_DBG, "  random: sizeFormat 0x%x bytes\n", (sizeFormat)?sizeFormat+2:3);
     switch (sizeFormat) {
     case 0: /* fall through, size is the same as case 1 */
     case 1:
@@ -524,7 +519,7 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
         if (litSize + 3 > contentSize) {
             litSize = contentSize; /* no matches shorter than 3 are allowed */
         }
-
+        DBG(OLD_DBG, "  random: literals size 0x%x\n", litSize);
         /* most of the time generate a new distribution */
         if ((RAND(seed) & 3) || !frame->stats.hufInit) {
             do {
@@ -532,14 +527,14 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
                     /* add 10 to ensure some compressibility */
                     double const weight = ((RAND(seed) % 90) + 10) / 100.0;
 
-                    DBG(OLD5, "    distribution weight: %d%%\n",
+                    DBG(OLD_DBG, "  random: distribution weight: %d%%\n",
                                  (int)(weight * 100));
 
                     RAND_genDist(seed, frame->stats.hufDist, weight);
                 } else {
                     /* sometimes do restricted range literals to force
                      * non-huffman headers */
-                    DBG(OLD5, "    small range literals\n");
+                    DBG(OLD_DBG, "  random: small range literals\n");
                     RAND_bufferMaxSymb(seed, frame->stats.hufDist, DISTSIZE,
                                        15);
                 }
@@ -549,6 +544,7 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
                 /* generate the header from the distribution instead of the
                  * actual data to avoid bugs with symbols that were in the
                  * distribution but never showed up in the output */
+                DBG(OLD_DBG, "  writing huff header\n");
                 hufHeaderSize = writeHufHeader(
                         seed, frame->stats.hufTable, op, opend - op,
                         frame->stats.hufDist, DISTSIZE);
@@ -561,7 +557,7 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
             frame->stats.hufInit = 1;
         } else {
             /* repeat the distribution/table from last time */
-            DBG(OLD5, "    huffman repeat stats\n");
+            DBG(OLD_DBG, "  huffman repeat table from last time\n");
             RAND_bufferDist(seed, frame->stats.hufDist, LITERAL_BUFFER,
                             litSize);
             hufHeaderSize = 0;
@@ -569,6 +565,7 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
         }
 
         do {
+            DBG(OLD_DBG, "  random: huffman compress literals in %d parts\n",(sizeFormat == 0)?1:4);
             compressedSize =
                     sizeFormat == 0
                             ? HUF_compress1X_usingCTable(
@@ -584,10 +581,10 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
         op += compressedSize;
 
         compressedSize += hufHeaderSize;
-        DBG(OLD5, "    regenerated size: 0x%x\n", (unsigned)litSize);
-        DBG(OLD5, "    compressed size: 0x%x\n", (unsigned)compressedSize);
+        DBG(OLD_DBG, "  regenerated literals size: 0x%x\n", (unsigned)litSize);
+        DBG(OLD_DBG, "  compressed literals size: 0x%x\n", (unsigned)compressedSize);
         if (compressedSize >= litSize) {
-            DBG(OLD5, "     trying again\n");
+            DBG(OLD_DBG, "  compressedSize >= litSize, trying again\n");
             /* if we have to try again, reset the stats so we don't accidentally
              * try to repeat a distribution we just made */
             frame->stats = frame->oldStats;
@@ -629,8 +626,10 @@ static size_t writeLiteralsBlock(U32* seed, frame_t* frame, size_t contentSize)
 {
     /* only do compressed for larger segments to avoid compressibility issues */
     if (RAND(seed) & 7 && contentSize >= 64) {
+        DBG(OLD_DBG, "  random: literals compressed\n");
         return writeLiteralsBlockCompressed(seed, frame, contentSize);
     } else {
+        DBG(OLD_DBG, "  random: literals uncompressed\n");
         return writeLiteralsBlockSimple(seed, frame, contentSize);
     }
 }
@@ -666,12 +665,13 @@ generateSequences(U32* seed, frame_t* frame, seqStore_t* seqStore,
          * number of sequences we can have */
         U32 const maxSequences = (U32)remainingMatch / MIN_SEQ_LEN;
         numSequences = (RAND(seed) % maxSequences) + 1;
+        DBG(OLD_DBG, "  random: preparing 0x%x sequences\n", numSequences);
 
         /* the extra match lengths we have to allocate to each sequence */
         excessMatch = remainingMatch - numSequences * MIN_SEQ_LEN;
     }
 
-    DBG(OLD5, "    total match lengths: 0x%x\n", (unsigned)remainingMatch);
+    DBG(OLD_DBG, "  total match lengths: 0x%x\n", (unsigned)remainingMatch);
     for (i = 0; i < numSequences; i++) {
         /* Generate match and literal lengths by exponential distribution to
          * ensure nice numbers */
@@ -761,13 +761,12 @@ generateSequences(U32* seed, frame_t* frame, seqStore_t* seqStore,
             frame->stats.rep[0] = offset;
         }
 
-        DBG(OLD6, "      LL: 0x%.3x OF: 0x%.5u ML: 0x%.4u",
-                    (unsigned)literalLen, (unsigned)offset, (unsigned)matchLen);
-        DBG(OLD7, " srcPos: 0x%.7x seqNb: 0x%.3x",
+        DBG(OLD_DBG, "  <0x%x: LL: 0x%.3x OF: 0x%.5u ML: 0x%.4u, ",
+                    i, (unsigned)literalLen, (unsigned)offset, (unsigned)matchLen);
+        DBG(OLD_DBG, " srcPos: 0x%.7x seqNb: 0x%.3x>\n",
                      (unsigned)((BYTE*)srcPtr - (BYTE*)frame->srcStart), (unsigned)i);
-        DBG(OLD6, "\n");
         if (OFFBASE_IS_REPCODE(offBase)) {  /* expects sumtype numeric representation of ZSTD_storeSeq() */
-            DBG(OLD7, "        repeat offset: %d\n", (int)repIndex);
+            DBG(OLD_DBG, "  repeat offset: %d\n", (int)repIndex);
         }
         /* use libzstd sequence handling */
         ZSTD_storeSeq(seqStore, literalLen, literals, literals + literalLen,
@@ -780,9 +779,9 @@ generateSequences(U32* seed, frame_t* frame, seqStore_t* seqStore,
 
     memcpy(srcPtr, literals, literalsSize);
     srcPtr += literalsSize;
-    DBG(OLD6, "      excess literals: 0x%.4x ", (unsigned)literalsSize);
-    DBG(OLD7, "srcPos: 0x%.6x ", (unsigned)((BYTE*)srcPtr - (BYTE*)frame->srcStart));
-    DBG(OLD6, "\n");
+    DBG(OLD_DBG, "  excess literals: 0x%.4x ", (unsigned)literalsSize);
+    DBG(OLD_DBG, "srcPos: 0x%.6x ", (unsigned)((BYTE*)srcPtr - (BYTE*)frame->srcStart));
+    DBG(OLD_DBG, "\n");
 
     return numSequences;
 }
@@ -941,7 +940,7 @@ static size_t writeSequences(U32* seed, frame_t* frame, seqStore_t* seqStorePtr,
     initSymbolSet(ofCodeTable, nbSeq, frame->stats.offsetSymbolSet, 28);
     initSymbolSet(mlCodeTable, nbSeq, frame->stats.matchlengthSymbolSet, 52);
 
-    DBG(OLD5, "    LL type: %d OF type: %d ML type: %d\n", (unsigned)LLtype, (unsigned)Offtype, (unsigned)MLtype);
+    DBG(OLD_DBG, "  LL type: %d OF type: %d ML type: %d\n", (unsigned)LLtype, (unsigned)Offtype, (unsigned)MLtype);
 
     *seqHead = (BYTE)((LLtype<<6) + (Offtype<<4) + (MLtype<<2));
 
@@ -1025,17 +1024,11 @@ static size_t writeCompressedBlock(U32* seed, frame_t* frame, size_t contentSize
     BYTE* const blockStart = (BYTE*)frame->data;
     size_t literalsSize;
     size_t nbSeq;
-
-    DBG(OLD4, "  compressed block:\n");
-
+    DBG(OLD_DBG, "  ******* PREPARE LITERALS SECTION ***********\n");
     literalsSize = writeLiteralsBlock(seed, frame, contentSize);
-
-    DBG(OLD4, "   literals size: 0x%x\n", (unsigned)literalsSize);
-
+    DBG(OLD_DBG, "  ******* PREPARE SEQUENCES SECTION ***********\n");
     nbSeq = writeSequencesBlock(seed, frame, contentSize, literalsSize, info);
-
-    DBG(OLD4, "   number of sequences: 0x%x\n", (unsigned)nbSeq);
-
+    DBG(OLD_DBG, "  total number of sequences: 0x%x\n", (unsigned)nbSeq);
     return (BYTE*)frame->data - blockStart;
 }
 
@@ -1049,13 +1042,10 @@ static void writeBlock(U32* seed, frame_t* frame, size_t contentSize,
     BYTE *const header = (BYTE*)frame->data;
     BYTE *op = header + 3;
 
-    DBG(OLD4, " block:\n");
-    DBG(OLD4, "  block content size: 0x%x\n", (unsigned)contentSize);
-    DBG(OLD4, "  last block: %s\n", lastBlock ? "yes" : "no");
 
     if (blockTypeDesc == 0) {
         /* Raw data frame */
-
+        DBG(OLD_DBG, "  random block type: RAW\n");
         RAND_buffer(seed, frame->src, contentSize);
         memcpy(op, frame->src, contentSize);
 
@@ -1064,6 +1054,7 @@ static void writeBlock(U32* seed, frame_t* frame, size_t contentSize,
         blockSize = contentSize;
     } else if (blockTypeDesc == 1 && frame->header.contentSize > 0) {
         /* RLE (Don't create RLE block if frame content is 0 since block size of 1 may exceed max block size)*/
+        DBG(OLD_DBG, "  random block type: RLE\n");
         BYTE const symbol = RAND(seed) & 0xff;
 
         op[0] = symbol;
@@ -1074,6 +1065,7 @@ static void writeBlock(U32* seed, frame_t* frame, size_t contentSize,
         blockSize = contentSize;
     } else {
         /* compressed, most common */
+        DBG(OLD_DBG, "  random block type: COMPRESSED\n");
         size_t compressedSize;
         blockType = 2;
 
@@ -1083,6 +1075,7 @@ static void writeBlock(U32* seed, frame_t* frame, size_t contentSize,
         compressedSize = writeCompressedBlock(seed, frame, contentSize, info);
         if (compressedSize >= contentSize) {   /* compressed block must be strictly smaller than uncompressed one */
             blockType = 0;
+            DBG(OLD_DBG, "  Compressed size too large, rewrite as RAW\n");
             memcpy(op, frame->src, contentSize);
 
             op += contentSize;
@@ -1097,8 +1090,8 @@ static void writeBlock(U32* seed, frame_t* frame, size_t contentSize,
     }
     frame->src = (BYTE*)frame->src + contentSize;
 
-    DBG(OLD4, "  block type: %s\n", BLOCK_TYPES[blockType]);
-    DBG(OLD4, "  block size field: 0x%x\n", (unsigned)blockSize);
+    DBG(OLD_DBG, "  block type: %s\n", BLOCK_TYPES[blockType]);
+    DBG(OLD_DBG, "  block size field: 0x%x\n", (unsigned)blockSize);
 
     header[0] = (BYTE) ((lastBlock | (blockType << 1) | (blockSize << 3)) & 0xff);
     MEM_writeLE16(header + 1, (U16) (blockSize >> 5));
@@ -1128,6 +1121,8 @@ static void writeBlocks(U32* seed, frame_t* frame, dictInfo info)
                 blockContentSize = 0;
             }
         }
+        DBG(OLD_DBG, "********  NEW BLOCK  ***************\n");
+        DBG(OLD_DBG, "  random block of size 0x%x\n",blockContentSize);
 
         writeBlock(seed, frame, blockContentSize, lastBlock, info);
 
@@ -1140,7 +1135,7 @@ static void writeChecksum(frame_t* frame)
 {
     /* write checksum so implementations can verify their output */
     U64 digest = XXH64(frame->srcStart, (BYTE*)frame->src-(BYTE*)frame->srcStart, 0);
-    DBG(OLD3, "  checksum: %08x\n", (unsigned)digest);
+    DBG(OLD_DBG, "checksum: %08x\n", (unsigned)digest);
     MEM_writeLE32(frame->data, (U32)digest);
     frame->data = (BYTE*)frame->data + 4;
 }
@@ -1201,7 +1196,7 @@ static U32 generateCompressedBlock(U32 seed, frame_t* frame, dictInfo info)
     size_t blockContentSize;
     int blockWritten = 0;
     BYTE* op;
-    DBG(OLD4, "block seed: 0x%x\n", (unsigned)seed);
+    DBG(OLD_DBG, "block seed: 0x%x\n", (unsigned)seed);
     initFrame(frame);
     op = (BYTE*)frame->data;
 
@@ -1235,10 +1230,10 @@ static U32 generateCompressedBlock(U32 seed, frame_t* frame, dictInfo info)
         if (cSize >= blockContentSize) {  /* compressed size must be strictly smaller than decompressed size : https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#blocks */
             /* data doesn't compress -- try again */
             frame->stats = frame->oldStats; /* don't update the stats */
-            DBG(OLD5, "   can't compress block : try again \n");
+            DBG(OLD_DBG, "   can't compress block : try again \n");
         } else {
             blockWritten = 1;
-            DBG(OLD4, "   block size: 0x%x \n", (unsigned)cSize);
+            DBG(OLD_DBG, "   block size: 0x%x \n", (unsigned)cSize);
             frame->src = (BYTE*)frame->src + blockContentSize;
         }
     }
@@ -1249,7 +1244,7 @@ static U32 generateCompressedBlock(U32 seed, frame_t* frame, dictInfo info)
 static U32 generateFrame(U32 seed, frame_t* fr, dictInfo info)
 {
     /* generate a complete frame */
-    DBG(OLD3, "frame seed: 0x%x\n", (unsigned)seed);
+    DBG(OLD_DBG, "frame seed: 0x%x\n", (unsigned)seed);
     initFrame(fr);
 
     writeFrameHeader(&seed, fr, info);
@@ -1345,6 +1340,7 @@ BYTE DECOMPRESSED_BUFFER[MAX_DECOMPRESSED_SIZE];
 static size_t testDecodeSimple(frame_t* fr)
 {
     /* test decoding the generated data with the simple API */
+
     size_t const ret = ZSTD_decompress_simple(DECOMPRESSED_BUFFER, MAX_DECOMPRESSED_SIZE,
                            fr->dataStart, (BYTE*)fr->data - (BYTE*)fr->dataStart);
 
@@ -1431,6 +1427,7 @@ static size_t testDecodeWithDict(U32 seed, genType_e genType)
         if (genType == gt_frame) {
             /* Test frame */
             generateFrame(seed, &fr, info);
+            DBG(OLD_DBG, "********  BLOCK CREATED, NOW DECOMPRESS ***************\n");
             ret = ZSTD_decompress_usingDict(dctx, DECOMPRESSED_BUFFER, MAX_DECOMPRESSED_SIZE,
                                             fr.dataStart, (BYTE*)fr.data - (BYTE*)fr.dataStart,
                                             fullDict, dictSize);
@@ -1518,6 +1515,7 @@ static int runFrameTest(U32* seed)
     {   dictInfo const info = initDictInfo(0, 0, NULL, 0);
         *seed = generateFrame(*seed, &fr, info);
     }
+    DBG(OLD_DBG, "********* COMPRESS DONE, NOW DECOMPRESS *********\n");
 
     {   size_t const r = testDecodeSimple(&fr);
         if (ZSTD_isError(r)) {
@@ -1555,7 +1553,7 @@ static int runTestMode(U32 seed, unsigned numFiles, unsigned const testDurationS
 
     if (numFiles == 0 && !testDurationS) numFiles = 1;
 
-    DISPLAY("seed: 0x%x\n", (unsigned)seed);
+    DBG(OLD_DBG, "Random seed: 0x%x\n", (unsigned)seed);
 
     for (fnum = 0; fnum < numFiles || UTIL_clockSpanMicro(startClock) < maxClockSpan; fnum++) {
         if (fnum < numFiles)

@@ -2262,13 +2262,13 @@ static inline u8 HUF_decode_symbol(const HUF_dtable *const dtable,
     const u8 symb = dtable->symbols[*state];
     const u8 bits = dtable->num_bits[*state];
     const u16 rest = STREAM_read_bits(src, bits, offset);
-     DBG(DBG_SV |DBG_HUFF_DATA, "state=0x%.4x, bits=0x%x --> read bits=0x%.2x --> ",*state,bits,rest);
+    DBG(DBG_SV |DBG_HUFF_DATA, "0x%.4x, 0x%x --> 0x%.2x ",*state,bits,rest);
     // Shift `bits` bits out of the state, keeping the low order bits that
     // weren't necessary to determine this symbol.  Then add in the new bits
     // read from the stream.
     *state = ((*state << bits) + rest) & (((u16)1 << dtable->max_bits) - 1);
-    //DBG_bits(DBG_HUFF_DATA, rest, bits, dtable->max_bits);
-     DBG(DBG_SV |DBG_HUFF_DATA,  "symbol=0x%.2x(\'%c\'), new state=0x%.4x\n", symb, CHAR_SAFE(symb),*state);
+    DBG_bits(DBG_SV | DBG_HUFF_DATA, rest, bits, dtable->max_bits);
+    DBG(DBG_SV | DBG_HUFF_DATA,  " -->  0x%.2x(\'%c\'), 0x%.4x\n", symb, CHAR_SAFE(symb),*state);
     return symb;
 }
 
@@ -2308,6 +2308,7 @@ static size_t HUF_decompress_1stream(const HUF_dtable *const dtable,
     HUF_init_state(dtable, &state, src, &bit_offset);
 
     size_t symbols_written = 0;
+    DBG(DBG_SV | DBG_HUFF_DATA, "Current state, bits to read --> read bits value --> out symbol (=current state), new state\n");
     while (bit_offset > -dtable->max_bits) {
         // Iterate over the stream, decoding one symbol at a time
         IO_write_byte(out, HUF_decode_symbol(dtable, &state, src, &bit_offset));
@@ -2424,9 +2425,9 @@ static void HUF_init_dtable(HUF_dtable *const table, const u8 *const bits,
             // the lower bits
             const u16 len = 1 << (max_bits - bits[i]);
             memset(&table->symbols[code], i, len);
-             DBG(DBG_SV |DBG_HUFF, "HUFF_TBL[0x%x(\"%c\")]\n", table->symbols[code],CHAR_SAFE(table->symbols[code]));
-            DBG_bits(DBG_HUFF, code, bits[i], max_bits);
-             DBG(DBG_SV |DBG_HUFF, "\n");
+            DBG(DBG_SV |DBG_HUFF, "Letter 0x%x(\"%c\") encoded by bits: 0x%x ", table->symbols[code],CHAR_SAFE(table->symbols[code]));
+            DBG_bits(DBG_SV | DBG_HUFF, code, bits[i], max_bits);
+            DBG(DBG_SV |DBG_HUFF, "\n");
             rank_idx[bits[i]] += len;
         }
     }
