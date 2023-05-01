@@ -145,7 +145,7 @@ static DTableDesc HUF_getDTableDesc(const HUF_DTable* table)
 }
 
 
-
+void DBG_bits(int b_print, U32 number, U32 bits, U32 tableLog);
 void DBG_bits(int b_print, U32 number, U32 bits, U32 tableLog) {
     // per bit print 0 or 1
     if (b_print) {

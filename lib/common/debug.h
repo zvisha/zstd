@@ -53,7 +53,7 @@ extern "C" {
 
 #define DBG_ENABLE 1
 
-void DBGMEM(int b_print, char *desc, const void *addr, unsigned int len);
+void DBGMEM(int b_print, const char *desc, const void *addr, unsigned int len);
 #define DBG(X,...) do {if (X) printf(__VA_ARGS__);} while(0)
 #define DBGN(X,...) if (X) {DBG(X, __VA_ARGS__); DBG(X, "\n");}
 

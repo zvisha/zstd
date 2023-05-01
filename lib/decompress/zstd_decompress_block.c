@@ -53,16 +53,17 @@
 /*_*******************************************************
 *  Zvi's Prints
 **********************************************************/
-
+void DBG_ZSTD_seqSymbol(const char* name, int state,const ZSTD_seqSymbol* s);
 void DBG_ZSTD_seqSymbol(const char* name, int state,const ZSTD_seqSymbol* s) {
     DBG(DBG_SEQUENCES, "%s state[%3d]:nextState:%3d, nbAddBits:%2d, nbBits:%d, baseValue:%3d\n",name, state, s->nextState, s->nbAdditionalBits, s->nbBits, s->baseValue);
 }
-
+void DBG_BIT_DStream_t(const char* name, BIT_DStream_t *s);
 void DBG_BIT_DStream_t(const char* name, BIT_DStream_t *s) {
     DBG(DBG_SEQUENCES, "%s BIT_DStream_t: bitContainer:%zu, bitsConsumed:%d, ptr:%p, start:%p, limitPtr:%p\n",name, s->bitContainer, s->bitsConsumed, s->ptr, s->start, s->limitPtr);
 }
 
 // Frst entry is header with size (tableLog).
+void DBG_fse_ZSTD_seqSymbol_table(const char* table_name, const ZSTD_seqSymbol* tableDecode);
 void DBG_fse_ZSTD_seqSymbol_table(const char* table_name, const ZSTD_seqSymbol* tableDecode) {
     U32 u;
     const ZSTD_seqSymbol_header* DTableH  = (const ZSTD_seqSymbol_header*)(const void*)tableDecode;

@@ -73,7 +73,7 @@
 #endif
 #include <stdio.h>
 
-void DBGMEM(int b_print,char *desc, const void *addr, unsigned int len)
+void DBGMEM(int b_print, const char *desc, const void *addr, unsigned int len)
 {
     unsigned int i;
     char buff[17];
